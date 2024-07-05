@@ -1,0 +1,19 @@
+{
+    "name": "com.le888.shader-varian-collector-tolls",
+    "version": "1.0.0",
+    "displayName": "ShaderVarianCollectorTools",
+    "description": "ShaderVarianCollectorTools",
+    "unity": "2021.3",
+    "documentationUrl": "https://example.com/",
+    "dependencies": {
+      
+   },
+   "keywords": [
+        "ShaderVarianCollectorTools"
+    ],
+    "author": {
+        "name": "liuleyou",
+        "email": "707649841@qq.com"
+    },
+    "license": "MIT"
+  }
