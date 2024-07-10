@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Linq;
@@ -10,8 +9,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 
 
-
-    /// <summary>
+/// <summary>
     /// 编辑器工具类
     /// </summary>
     public static class EditorTools
