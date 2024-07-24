@@ -19,15 +19,16 @@ public static class ShaderVariantCollector
         CollectAllMaterial,
         CollectAllScene,
         CollectVariants,
-        CollectSceneVariants,
         CollectSleeping,
+        CollectWaitToScene,
+        CollectSceneVariants,
         CollectSceneSleeping,
         WaitingDone,
     }
 
-    private const float WaitMilliseconds = 1000f;
-    private const float SleepMilliseconds = 2000f;
-    private const float SleepMilliSceneseconds = 4000f;
+    private const float WaitMilliseconds = 2000f;
+    private const float SleepMilliseconds = 5000f;
+    private const float SleepSceneMilliseconds = 10000f;
 
     private static string _savePath;
     private static string _searchPath;
@@ -123,6 +124,16 @@ public static class ShaderVariantCollector
             else
             {
                 _elapsedTime = Stopwatch.StartNew();
+                _steps = ESteps.CollectWaitToScene;
+            }
+        }
+
+        if (_steps == ESteps.CollectWaitToScene)
+        {
+            if (_elapsedTime.ElapsedMilliseconds > SleepMilliseconds)
+            {
+                DestroyAllSpheres();
+                _elapsedTime.Stop();
                 _steps = ESteps.CollectSceneVariants;
             }
         }
@@ -139,11 +150,15 @@ public static class ShaderVariantCollector
 
         if (_steps == ESteps.CollectSceneSleeping)
         {
-            if (_elapsedTime.ElapsedMilliseconds > SleepMilliSceneseconds)
+            if (_elapsedTime.ElapsedMilliseconds > SleepSceneMilliseconds)
             {
                 DestoryLoadScene();
                 _elapsedTime.Stop();
                 _steps = ESteps.CollectSceneVariants;
+            }
+            else
+            {
+                UpdateSceneCamera(_elapsedTime.ElapsedMilliseconds);
             }
         }
 
@@ -219,26 +234,26 @@ public static class ShaderVariantCollector
         return materialsPaths.Distinct().ToList(); // Remove duplicates and return the list
     }
     
-    // public static List<string> GetAllMaterials()
-    // {
-    //     List<string> materialPaths = new List<string>();
-    //     string[] materialGuids = AssetDatabase.FindAssets("t:Material", new[] { _searchPath });
-    //
-    //     foreach (string guid in materialGuids)
-    //     {
-    //         string path = AssetDatabase.GUIDToAssetPath(guid);
-    //         materialPaths.Add(path);
-    //     }
-    //
-    //     return materialPaths;
-    // }
-    
-    private static List<string> GetAllMaterials()
+    public static List<string> GetAllMaterials()
     {
-        List<string> materials = GetAllMaterialsFromPrefabs(_searchPath);
+        List<string> materialPaths = new List<string>();
+        string[] materialGuids = AssetDatabase.FindAssets("t:Material", new[] { _searchPath });
     
-        return materials;
+        foreach (string guid in materialGuids)
+        {
+            string path = AssetDatabase.GUIDToAssetPath(guid);
+            materialPaths.Add(path);
+        }
+    
+        return materialPaths;
     }
+    
+    // private static List<string> GetAllMaterials()
+    // {
+    //     List<string> materials = GetAllMaterialsFromPrefabs(_searchPath);
+    //
+    //     return materials;
+    // }
 
     public static List<string> GetAllScenes(string searchPath)
     {
@@ -298,6 +313,7 @@ public static class ShaderVariantCollector
     }
     
     private static void CollectScene(string scenePath)
+    
     {
         _currentScene = EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Additive);
          if (_currentScene == null)
@@ -310,6 +326,18 @@ public static class ShaderVariantCollector
         // 设置主相机 在位置(0,100,0)处，朝向(0,0,0)
         camera.transform.position = new Vector3(0, 100, 0);
         camera.transform.LookAt(Vector3.zero);
+    }
+    
+    private static void UpdateSceneCamera(float elapsedTimeElapsedMilliseconds)
+    {
+        Camera camera = Camera.main;
+        if (camera == null)
+            throw new System.Exception("Not found main camera.");
+
+        // 设置主相机 在位置(0,100,0)处，朝向(0,0,0)
+        var starPos = new Vector3(0, 100, 0);
+        var endPos = new Vector3(1000, 100, 1000);
+        camera.transform.position = Vector3.Lerp(starPos, endPos, elapsedTimeElapsedMilliseconds / SleepSceneMilliseconds);
     }
 
     private static GameObject CreateSphere(string assetPath, Vector3 position, int index)
