@@ -7,6 +7,7 @@ using UnityEngine;
 using UnityEditor;
 using UnityEditor.EditorTools;
 using UnityEditor.SceneManagement;
+using UnityEngine.SceneManagement;
 using Debug = UnityEngine.Debug;
 
 public static class ShaderVariantCollector
@@ -16,16 +17,21 @@ public static class ShaderVariantCollector
         None,
         Prepare,
         CollectAllMaterial,
+        CollectAllScene,
         CollectVariants,
+        CollectSceneVariants,
         CollectSleeping,
+        CollectSceneSleeping,
         WaitingDone,
     }
 
     private const float WaitMilliseconds = 1000f;
     private const float SleepMilliseconds = 2000f;
+    private const float SleepMilliSceneseconds = 4000f;
 
     private static string _savePath;
     private static string _searchPath;
+    private static string _scenePath;
 
     // private static string _packageName;
     private static int _processMaxNum;
@@ -35,12 +41,15 @@ public static class ShaderVariantCollector
     private static Stopwatch _elapsedTime;
     private static List<string> _allMaterials;
     private static List<GameObject> _allSpheres = new List<GameObject>(1000);
+    
+    private static List<string> _allScene;
+    private static Scene _currentScene;
 
 
     /// <summary>
     /// 开始收集
     /// </summary>
-    public static void Run(string savePath, string searchPath,int processMaxNum, Action completedCallback)
+    public static void Run(string savePath, string searchPath,string scenePath,int processMaxNum, Action completedCallback)
     {
         if (_steps != ESteps.None)
             return;
@@ -58,6 +67,7 @@ public static class ShaderVariantCollector
 
         _savePath = savePath;
         _searchPath = searchPath;
+        _scenePath = scenePath;
         // _packageName = packageName;
         _processMaxNum = processMaxNum;
         _completedCallback = completedCallback;
@@ -87,6 +97,13 @@ public static class ShaderVariantCollector
         if (_steps == ESteps.CollectAllMaterial)
         {
             _allMaterials = GetAllMaterials();
+            _steps = ESteps.CollectAllScene;
+            return; //等待一帧
+        }
+
+        if (_steps == ESteps.CollectAllScene)
+        {
+            _allScene = GetAllScenes(_scenePath);
             _steps = ESteps.CollectVariants;
             return; //等待一帧
         }
@@ -106,7 +123,7 @@ public static class ShaderVariantCollector
             else
             {
                 _elapsedTime = Stopwatch.StartNew();
-                _steps = ESteps.WaitingDone;
+                _steps = ESteps.CollectSceneVariants;
             }
         }
 
@@ -120,6 +137,34 @@ public static class ShaderVariantCollector
             }
         }
 
+        if (_steps == ESteps.CollectSceneSleeping)
+        {
+            if (_elapsedTime.ElapsedMilliseconds > SleepMilliSceneseconds)
+            {
+                DestoryLoadScene();
+                _elapsedTime.Stop();
+                _steps = ESteps.CollectSceneVariants;
+            }
+        }
+
+        if (_steps == ESteps.CollectSceneVariants)
+        {
+            if (_allScene.Count == 0)
+            {
+                DestoryLoadScene();
+                _steps = ESteps.WaitingDone;
+            }
+            else
+            {
+                var scenePath = _allScene[0];
+                _allScene.RemoveAt(0);
+                //加载场景
+                CollectScene(scenePath);
+                _elapsedTime = Stopwatch.StartNew();
+                _steps = ESteps.CollectSceneSleeping;
+            }
+           
+        }
         if (_steps == ESteps.WaitingDone)
         {
             // 注意：一定要延迟保存才会起效
@@ -130,7 +175,7 @@ public static class ShaderVariantCollector
 
                 // 保存结果并创建清单
                 ShaderVariantCollectionHelper.SaveCurrentShaderVariantCollection(_savePath);
-                CreateManifest();
+                // CreateManifest();
 
                 Debug.Log($"搜集SVC完毕！");
                 EditorApplication.update -= EditorUpdate;
@@ -156,7 +201,7 @@ public static class ShaderVariantCollector
             if (prefab != null)
             {
                 // Get all Renderer components in the prefab, including children
-                Renderer[] renderers = prefab.GetComponentsInChildren<Renderer>();
+                Renderer[] renderers = prefab.GetComponentsInChildren<Renderer>(true);
                 foreach (Renderer renderer in renderers)
                 {
                     foreach (Material material in renderer.sharedMaterials)
@@ -173,13 +218,40 @@ public static class ShaderVariantCollector
 
         return materialsPaths.Distinct().ToList(); // Remove duplicates and return the list
     }
-
+    
+    // public static List<string> GetAllMaterials()
+    // {
+    //     List<string> materialPaths = new List<string>();
+    //     string[] materialGuids = AssetDatabase.FindAssets("t:Material", new[] { _searchPath });
+    //
+    //     foreach (string guid in materialGuids)
+    //     {
+    //         string path = AssetDatabase.GUIDToAssetPath(guid);
+    //         materialPaths.Add(path);
+    //     }
+    //
+    //     return materialPaths;
+    // }
+    
     private static List<string> GetAllMaterials()
     {
         List<string> materials = GetAllMaterialsFromPrefabs(_searchPath);
-        
+    
         return materials;
     }
+
+    public static List<string> GetAllScenes(string searchPath)
+    {
+        List<string> scenePaths = new List<string>();
+        string[] sceneGUIDs = AssetDatabase.FindAssets("t:Scene", new[] { searchPath });
+        foreach (string guid in sceneGUIDs)
+        {
+            string path = AssetDatabase.GUIDToAssetPath(guid);
+            scenePaths.Add(path);
+        }
+        return scenePaths;
+    }
+    
 
     private static void CollectVariants(List<string> materials)
     {
@@ -224,10 +296,31 @@ public static class ShaderVariantCollector
 
         EditorTools.ClearProgressBar();
     }
+    
+    private static void CollectScene(string scenePath)
+    {
+        _currentScene = EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Additive);
+         if (_currentScene == null)
+              return;
+         
+         Camera camera = Camera.main;
+         if (camera == null)
+             throw new System.Exception("Not found main camera.");
+
+        // 设置主相机 在位置(0,100,0)处，朝向(0,0,0)
+        camera.transform.position = new Vector3(0, 100, 0);
+        camera.transform.LookAt(Vector3.zero);
+    }
 
     private static GameObject CreateSphere(string assetPath, Vector3 position, int index)
     {
         var material = AssetDatabase.LoadAssetAtPath<Material>(assetPath);
+
+        if (material == null)
+        {
+            return null;
+        }
+        
         var shader = material.shader;
         if (shader == null)
             return null;
@@ -250,6 +343,15 @@ public static class ShaderVariantCollector
 
         // 尝试释放编辑器加载的资源
         EditorUtility.UnloadUnusedAssetsImmediate(true);
+    }
+    
+    private static void DestoryLoadScene()
+    {
+        if (_currentScene != null)
+        {
+            EditorSceneManager.CloseScene(_currentScene, true);    
+        }
+        
     }
 
     private static void CreateManifest()

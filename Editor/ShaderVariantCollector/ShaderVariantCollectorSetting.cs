@@ -37,4 +37,16 @@ public class ShaderVariantCollectorSetting : ScriptableObject
         string key = $"{Application.productName}_{packageName}_GeFileInputPath";
         EditorPrefs.SetString(key, inputPath);
     }
+
+    public static string GeSecneSearchPath(string packageName)
+    {
+        string key = $"{Application.productName}_{packageName}_GeScenePath";
+        return EditorPrefs.GetString(key, "Assets");
+    }
+    
+    public static void SetSceneSearchPath(string packageName, string scenePath)
+    {
+        string key = $"{Application.productName}_{packageName}_GeScenePath";
+        EditorPrefs.SetString(key, scenePath);
+    }
 }

@@ -19,6 +19,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
     private Button _collectButton;
     private TextField _collectOutputField;
     private TextField _collectInputField;
+    private TextField _collectSceneField;
     private Label _currentShaderCountField;
     private Label _currentVariantCountField;
     private SliderInt _processCapacitySlider;
@@ -26,6 +27,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
 
     private List<string> _packageNames;
     private string _currentPackageName;
+    private string _scenePath;
 
     public void CreateGUI()
     {
@@ -56,6 +58,14 @@ public class ShaderVariantCollectorWindow : EditorWindow
             _collectInputField.RegisterValueChangedCallback(evt =>
             {
                 ShaderVariantCollectorSetting.SetFileSearchPath(_currentPackageName, _collectInputField.value);
+            });
+            
+            // 场景搜索目录
+            _collectSceneField = root.Q<TextField>("SceneCollectPath");
+            _collectSceneField.SetValueWithoutNotify(ShaderVariantCollectorSetting.GeSecneSearchPath(_currentPackageName));
+            _collectSceneField.RegisterValueChangedCallback(evt =>
+            {
+                ShaderVariantCollectorSetting.SetSceneSearchPath(_currentPackageName, _collectSceneField.value);
             });
 
             // 收集的包裹
@@ -128,8 +138,9 @@ public class ShaderVariantCollectorWindow : EditorWindow
     {
         string savePath = ShaderVariantCollectorSetting.GeFileSavePath(_currentPackageName);
         string searchPath = ShaderVariantCollectorSetting.GeFileSearchPath(_currentPackageName);
+        string searchScenePath = ShaderVariantCollectorSetting.GeSecneSearchPath(_currentPackageName);
         int processCapacity = _processCapacitySlider.value;
-        ShaderVariantCollector.Run(savePath,searchPath, processCapacity, null);
+        ShaderVariantCollector.Run(savePath,searchPath, searchScenePath,processCapacity, null);
     }
 
     // 构建包裹相关
