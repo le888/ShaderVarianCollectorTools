@@ -33,6 +33,7 @@ public static class ShaderVariantCollector
     private static string _savePath;
     private static string _searchPath;
     private static string _scenePath;
+    private static string[] _blackPath;
 
     // private static string _packageName;
     private static int _processMaxNum;
@@ -50,7 +51,7 @@ public static class ShaderVariantCollector
     /// <summary>
     /// 开始收集
     /// </summary>
-    public static void Run(string savePath, string searchPath,string scenePath,int processMaxNum, Action completedCallback)
+    public static void Run(string savePath, string searchPath,string scenePath,string[] blackPath, int processMaxNum, Action completedCallback)
     {
         if (_steps != ESteps.None)
             return;
@@ -69,6 +70,7 @@ public static class ShaderVariantCollector
         _savePath = savePath;
         _searchPath = searchPath;
         _scenePath = scenePath;
+        _blackPath = blackPath;
         // _packageName = packageName;
         _processMaxNum = processMaxNum;
         _completedCallback = completedCallback;
@@ -242,7 +244,10 @@ public static class ShaderVariantCollector
         foreach (string guid in materialGuids)
         {
             string path = AssetDatabase.GUIDToAssetPath(guid);
-            materialPaths.Add(path);
+            if (!IsBlack(path))
+            {
+                materialPaths.Add(path);
+            }
         }
     
         return materialPaths;
@@ -262,12 +267,33 @@ public static class ShaderVariantCollector
         foreach (string guid in sceneGUIDs)
         {
             string path = AssetDatabase.GUIDToAssetPath(guid);
-            scenePaths.Add(path);
+            if (!IsBlack(path))
+            {
+                scenePaths.Add(path);
+            }
         }
         return scenePaths;
     }
-    
 
+    private static bool IsBlack(string path)
+    {
+        if (_blackPath == null)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < _blackPath.Length; i++)
+        {
+            string black = _blackPath[i];
+            if (path.Contains(black))
+            {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
     private static void CollectVariants(List<string> materials)
     {
         Camera camera = Camera.main;

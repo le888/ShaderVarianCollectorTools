@@ -3,8 +3,20 @@ using UnityEditor;
 
 public class ShaderVariantCollectorSetting : ScriptableObject
 {
-    private const string DefaultSavePath = "Assets/MyShaderVariants.shadervariants";
+    private const string DefaultSavePath = "MyShaderVariants.shadervariants";
 
+    public static string GetFileName(string packageName)
+    {
+        string key = $"{Application.productName}_{packageName}_GeFileNamePath";
+        return EditorPrefs.GetString(key, DefaultSavePath);
+    }
+    
+    public static void SetFileName(string packageName, string name)
+    {
+        string key = $"{Application.productName}_{packageName}_GeFileNamePath";
+        EditorPrefs.SetString(key, name);
+    }
+    
     public static string GeFileSavePath(string packageName)
     {
         string key = $"{Application.productName}_{packageName}_GeFileSavePath";
@@ -47,6 +59,20 @@ public class ShaderVariantCollectorSetting : ScriptableObject
     public static void SetSceneSearchPath(string packageName, string scenePath)
     {
         string key = $"{Application.productName}_{packageName}_GeScenePath";
+        EditorPrefs.SetString(key, scenePath);
+    }
+    
+    public static string[] GeBlackPath(string packageName)
+    {
+        string key = $"{Application.productName}_{packageName}_GeBlackPath";
+        string value = EditorPrefs.GetString(key, "Assets");
+        string[] paths = value.Split(',');
+        return paths;
+    }
+    
+    public static void SetBlackPath(string packageName, string scenePath)
+    {
+        string key = $"{Application.productName}_{packageName}_GeBlackPath";
         EditorPrefs.SetString(key, scenePath);
     }
 }

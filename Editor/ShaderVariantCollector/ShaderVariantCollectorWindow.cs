@@ -18,8 +18,6 @@ public class ShaderVariantCollectorWindow : EditorWindow
 
     private Button _collectButton;
     private TextField _collectOutputField;
-    private TextField _collectInputField;
-    private TextField _collectSceneField;
     private Label _currentShaderCountField;
     private Label _currentVariantCountField;
     private SliderInt _processCapacitySlider;
@@ -27,7 +25,12 @@ public class ShaderVariantCollectorWindow : EditorWindow
 
     private List<string> _packageNames;
     private string _currentPackageName;
-    private string _scenePath;
+    private List<string> _blackSceneNames;
+    
+    public VisualElement outputContainer;   // 存放列表项的容器  
+    public VisualElement prefabCollectContainer;   // 存放列表项的容器  
+    public VisualElement sceneCollectContainer;   // 存放列表项的容器  
+    public VisualElement blacklistContainer;   // 存放列表项的容器  
 
     public void CreateGUI()
     {
@@ -41,32 +44,45 @@ public class ShaderVariantCollectorWindow : EditorWindow
                 return;
 
             visualAsset.CloneTree(root);
-
-
-
-            // 文件输出目录
-            _collectOutputField = root.Q<TextField>("CollectOutput");
-            _collectOutputField.SetValueWithoutNotify(ShaderVariantCollectorSetting.GeFileSavePath(_currentPackageName));
+         
+            _collectOutputField = root.Q<TextField>("ShaderCollectName");
+            _collectOutputField.SetValueWithoutNotify(ShaderVariantCollectorSetting.GetFileName(_currentPackageName));
             _collectOutputField.RegisterValueChangedCallback(evt =>
             {
-                ShaderVariantCollectorSetting.SetFileSavePath(_currentPackageName, _collectOutputField.value);
+                ShaderVariantCollectorSetting.SetFileName(_currentPackageName, _collectOutputField.value);
             });
             
-            // 文件输入目录
-            _collectInputField = root.Q<TextField>("VariantPrefabCollectPath");
-            _collectInputField.SetValueWithoutNotify(ShaderVariantCollectorSetting.GeFileSearchPath(_currentPackageName));
-            _collectInputField.RegisterValueChangedCallback(evt =>
+            outputContainer = root.Q<VisualElement>("OutPutVE");
+            prefabCollectContainer = root.Q<VisualElement>("PrefabCollectVE");
+            sceneCollectContainer = root.Q<VisualElement>("SceneCollectPath");
+            blacklistContainer = root.Q<VisualElement>("blacklistContainer");
+
+            string outputPath = ShaderVariantCollectorSetting.GeFileSavePath(_currentPackageName);
+            PathSelector outputSelector = new PathSelector(outputPath, false,"文件保存路径");
+            outputSelector.OnSaveEvent += delegate(string newpath)
             {
-                ShaderVariantCollectorSetting.SetFileSearchPath(_currentPackageName, _collectInputField.value);
-            });
+                ShaderVariantCollectorSetting.SetFileSavePath(_currentPackageName, newpath);
+            };
+            outputContainer.Add(outputSelector);
+
+            string prefabCollectPath = ShaderVariantCollectorSetting.GeFileSearchPath(_currentPackageName);
+            PathSelector prefabCollectSelector = new PathSelector(prefabCollectPath,false,"材质收集路径");
+            prefabCollectSelector.OnSaveEvent += delegate(string newpath)
+            {
+                ShaderVariantCollectorSetting.SetFileSearchPath(_currentPackageName, newpath);
+            };
+            prefabCollectContainer.Add(prefabCollectSelector);
+
+            string sceneCollectPath = ShaderVariantCollectorSetting.GeSecneSearchPath(_currentPackageName);
+            PathSelector sceneCollectSelector = new PathSelector(sceneCollectPath,false,"场景收集路径");
+            sceneCollectSelector.OnSaveEvent += delegate(string newpath)
+            {
+                ShaderVariantCollectorSetting.SetSceneSearchPath(_currentPackageName, newpath);
+            };
+            sceneCollectContainer.Add(sceneCollectSelector);
             
-            // 场景搜索目录
-            _collectSceneField = root.Q<TextField>("SceneCollectPath");
-            _collectSceneField.SetValueWithoutNotify(ShaderVariantCollectorSetting.GeSecneSearchPath(_currentPackageName));
-            _collectSceneField.RegisterValueChangedCallback(evt =>
-            {
-                ShaderVariantCollectorSetting.SetSceneSearchPath(_currentPackageName, _collectSceneField.value);
-            });
+            Button addBlackButton = root.Q<Button>("addBlackButton");
+            addBlackButton.clicked += OnAddSceneItem;
 
             // 收集的包裹
             // var packageContainer = root.Q("PackageContainer");
@@ -113,12 +129,83 @@ public class ShaderVariantCollectorWindow : EditorWindow
             // 变种收集按钮
             _collectButton = root.Q<Button>("CollectButton");
             _collectButton.clicked += CollectButton_clicked;
+            InitializeMaterialList();
         }
         catch (Exception e)
         {
             Debug.LogError(e.ToString());
         }
     }
+    
+    private void InitializeMaterialList()
+    {
+        string[] paths = ShaderVariantCollectorSetting.GeBlackPath(_currentPackageName);
+        _blackSceneNames = new List<string>();
+        
+        // 遍历初始化数据，添加项目到列表
+        foreach (string itemText in paths)
+        {
+            AddSceneItem(itemText);
+            _blackSceneNames.Add(itemText);
+        }
+    }
+    private void OnAddSceneItem()
+    {
+        AddSceneItem("");
+    }
+    
+    private void AddSceneItem(string path)
+    {
+        PathSelector pathSelector = new PathSelector(path);
+        pathSelector.OnSaveEvent += delegate(string newpath)
+        {
+            SetBlackScenePath(newpath);
+        };
+        
+        pathSelector.OnRemoveEvent += delegate()
+        {
+            SetBlackScenePath(pathSelector.SelectedPath, false);
+            blacklistContainer.Remove(pathSelector);
+        };
+        
+        blacklistContainer.Add(pathSelector);
+    }
+
+    private void SetBlackScenePath(string newpath, bool isAdd = true)
+    {
+        if (isAdd)
+        {
+            if (_blackSceneNames.Contains(newpath))
+            {
+                return;
+            }
+            _blackSceneNames.Add(newpath);
+        }
+        else
+        {
+            if (!_blackSceneNames.Contains(newpath))
+            {
+                return;
+            }
+            _blackSceneNames.Remove(newpath);
+        }
+        
+        string pathlists = "";
+        for (int i = 0; i < _blackSceneNames.Count; i++)
+        {
+            string path = _blackSceneNames[i];
+            if (i == 0)
+            {
+                pathlists += path;
+            }
+            else
+            {
+                pathlists += "," +  path;
+            }
+        }
+        ShaderVariantCollectorSetting.SetBlackPath(_currentPackageName, pathlists);
+    }
+
     private void Update()
     {
         if (_currentShaderCountField != null)
@@ -136,11 +223,14 @@ public class ShaderVariantCollectorWindow : EditorWindow
 
     private void CollectButton_clicked()
     {
+        string svName = ShaderVariantCollectorSetting.GetFileName(_currentPackageName);
         string savePath = ShaderVariantCollectorSetting.GeFileSavePath(_currentPackageName);
         string searchPath = ShaderVariantCollectorSetting.GeFileSearchPath(_currentPackageName);
         string searchScenePath = ShaderVariantCollectorSetting.GeSecneSearchPath(_currentPackageName);
+        string[] blackPaths = ShaderVariantCollectorSetting.GeBlackPath(_currentPackageName);
+
         int processCapacity = _processCapacitySlider.value;
-        ShaderVariantCollector.Run(savePath,searchPath, searchScenePath,processCapacity, null);
+        ShaderVariantCollector.Run($"{savePath}/{svName}", searchPath, searchScenePath, blackPaths, processCapacity, null);
     }
 
     // 构建包裹相关
