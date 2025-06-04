@@ -37,6 +37,7 @@ public static class ShaderVariantCollector
     private static string _scenePath;
     private static string[] _blackPath;
     private static bool _splitByShaderName;
+    private static bool _collectSceneVariants;
     private static int _processMaxNum;
     private static Action _completedCallback;
 
@@ -71,6 +72,7 @@ public static class ShaderVariantCollector
         _scenePath = scenePath;
         _blackPath = blackPath;
         _splitByShaderName = splitByShaderName;
+        _collectSceneVariants = ShaderVariantCollectorSetting.GetCollectSceneVariants("Default");
         _processMaxNum = processMaxNum;
         _completedCallback = completedCallback;
 
@@ -105,8 +107,16 @@ public static class ShaderVariantCollector
 
         if (_steps == ESteps.CollectAllScene)
         {
-            _allScene = GetAllScenes(_scenePath);
-            _steps = ESteps.CollectVariants;
+            if (_collectSceneVariants)
+            {
+                _allScene = GetAllScenes(_scenePath);
+                _steps = ESteps.CollectVariants;
+            }
+            else
+            {
+                _allScene = new List<string>();
+                _steps = ESteps.CollectVariants;
+            }
             return; //等待一帧
         }
 

@@ -23,6 +23,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
     private SliderInt _processCapacitySlider;
     private PopupField<string> _packageField;
     private Toggle _splitByShaderNameToggle;
+    private Toggle _collectSceneVariantsToggle;
 
     private List<string> _packageNames;
     private string _currentPackageName = "Default";
@@ -132,6 +133,13 @@ public class ShaderVariantCollectorWindow : EditorWindow
             _splitByShaderNameToggle.RegisterValueChangedCallback(evt =>
             {
                 ShaderVariantCollectorSetting.SetSplitByShaderName(_currentPackageName, evt.newValue);
+            });
+
+            _collectSceneVariantsToggle = root.Q<Toggle>("CollectSceneVariantsToggle");
+            _collectSceneVariantsToggle.SetValueWithoutNotify(ShaderVariantCollectorSetting.GetCollectSceneVariants(_currentPackageName));
+            _collectSceneVariantsToggle.RegisterValueChangedCallback(evt =>
+            {
+                ShaderVariantCollectorSetting.SetCollectSceneVariants(_currentPackageName, evt.newValue);
             });
 
             // 变种收集按钮

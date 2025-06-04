@@ -87,4 +87,16 @@ public class ShaderVariantCollectorSetting : ScriptableObject
         string key = $"{Application.productName}_{packageName}_SplitByShaderName";
         EditorPrefs.SetBool(key, value);
     }
+
+    public static bool GetCollectSceneVariants(string packageName)
+    {
+        string key = $"{Application.productName}_{packageName}_CollectSceneVariants";
+        return EditorPrefs.GetBool(key, false);
+    }
+
+    public static void SetCollectSceneVariants(string packageName, bool value)
+    {
+        string key = $"{Application.productName}_{packageName}_CollectSceneVariants";
+        EditorPrefs.SetBool(key, value);
+    }
 }
