@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.IO;
+using Sirenix.Utilities;
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEditor;
 using UnityEditor.EditorTools;
 using UnityEditor.SceneManagement;
@@ -417,6 +419,14 @@ public static class ShaderVariantCollector
         if (svc != null)
         {
             var wrapper = ShaderVariantCollectionManifest.Extract(svc);
+            
+            // 获取Always Included Shaders列表
+            var alwaysIncludedShaderNames = GetAlwaysIncludedShaderNames();
+            var hideShader = GetURPHiddenShaderNames();
+            alwaysIncludedShaderNames.AddRange(hideShader);
+            // 过滤掉Always Included Shaders
+            wrapper.ShaderVariantInfos.RemoveAll(info => alwaysIncludedShaderNames.Contains(info.ShaderName));
+            
             string jsonData = JsonUtility.ToJson(wrapper, true);
             string savePath = _savePath.Replace(".shadervariants", ".json");
             File.WriteAllText(savePath, jsonData);
@@ -458,5 +468,54 @@ public static class ShaderVariantCollector
         }
 
         AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
+    }
+    
+    public static HashSet<string> GetAlwaysIncludedShaderNames()
+    {
+        HashSet<string> shaderNames = new HashSet<string>();
+
+        var graphicsSettings = GraphicsSettings.GetGraphicsSettings();
+        var serializedObject = new SerializedObject(graphicsSettings);
+        var shadersProperty = serializedObject.FindProperty("m_AlwaysIncludedShaders");
+
+        for (int i = 0; i < shadersProperty.arraySize; i++)
+        {
+            var shaderProp = shadersProperty.GetArrayElementAtIndex(i);
+            var shader = shaderProp.objectReferenceValue as Shader;
+            if (shader != null)
+            {
+                shaderNames.Add(shader.name);
+            }
+        }
+
+        return shaderNames;
+    }
+    
+    /// <summary>
+    /// 获取 URP 包中所有 Hidden 开头的 Shader 名称集合（HashSet）
+    /// </summary>
+    public static HashSet<string> GetURPHiddenShaderNames()
+    {
+        HashSet<string> urpHiddenShaders = new HashSet<string>();
+
+        // 查找所有 Shader 资源
+        string[] guids = AssetDatabase.FindAssets("t:Shader");
+
+        foreach (string guid in guids)
+        {
+            string path = AssetDatabase.GUIDToAssetPath(guid);
+
+            // 只保留 URP 包路径下的 shader
+            if (path.StartsWith("Packages/com.unity.render-pipelines."))
+            {
+                Shader shader = AssetDatabase.LoadAssetAtPath<Shader>(path);
+                if (shader != null && shader.name.StartsWith("Hidden/"))
+                {
+                    urpHiddenShaders.Add(shader.name);
+                }
+            }
+        }
+
+        return urpHiddenShaders;
     }
 }
