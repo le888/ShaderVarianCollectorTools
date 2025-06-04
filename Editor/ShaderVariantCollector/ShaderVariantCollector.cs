@@ -284,7 +284,7 @@ public static class ShaderVariantCollector
         for (int i = 0; i < _blackPath.Length; i++)
         {
             string black = _blackPath[i];
-            if (path.Contains(black))
+            if (black != "" && path.Contains(black))
             {
                 return true;
             }
