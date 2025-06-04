@@ -22,9 +22,10 @@ public class ShaderVariantCollectorWindow : EditorWindow
     private Label _currentVariantCountField;
     private SliderInt _processCapacitySlider;
     private PopupField<string> _packageField;
+    private Toggle _splitByShaderNameToggle;
 
     private List<string> _packageNames;
-    private string _currentPackageName;
+    private string _currentPackageName = "Default";
     private List<string> _blackSceneNames;
     
     public VisualElement outputContainer;   // 存放列表项的容器  
@@ -125,6 +126,13 @@ public class ShaderVariantCollectorWindow : EditorWindow
 
             _currentShaderCountField = root.Q<Label>("CurrentShaderCount");
             _currentVariantCountField = root.Q<Label>("CurrentVariantCount");
+
+            _splitByShaderNameToggle = root.Q<Toggle>("SplitByShaderNameToggle");
+            _splitByShaderNameToggle.SetValueWithoutNotify(ShaderVariantCollectorSetting.GetSplitByShaderName(_currentPackageName));
+            _splitByShaderNameToggle.RegisterValueChangedCallback(evt =>
+            {
+                ShaderVariantCollectorSetting.SetSplitByShaderName(_currentPackageName, evt.newValue);
+            });
 
             // 变种收集按钮
             _collectButton = root.Q<Button>("CollectButton");
@@ -228,9 +236,10 @@ public class ShaderVariantCollectorWindow : EditorWindow
         string searchPath = ShaderVariantCollectorSetting.GeFileSearchPath(_currentPackageName);
         string searchScenePath = ShaderVariantCollectorSetting.GeSecneSearchPath(_currentPackageName);
         string[] blackPaths = ShaderVariantCollectorSetting.GeBlackPath(_currentPackageName);
+        bool splitByShaderName = ShaderVariantCollectorSetting.GetSplitByShaderName(_currentPackageName);
 
         int processCapacity = _processCapacitySlider.value;
-        ShaderVariantCollector.Run($"{savePath}/{svName}", searchPath, searchScenePath, blackPaths, processCapacity, null);
+        ShaderVariantCollector.Run($"{savePath}/{svName}", searchPath, searchScenePath, blackPaths, processCapacity, splitByShaderName, null);
     }
 
     // 构建包裹相关

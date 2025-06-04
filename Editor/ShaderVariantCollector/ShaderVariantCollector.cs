@@ -34,8 +34,7 @@ public static class ShaderVariantCollector
     private static string _searchPath;
     private static string _scenePath;
     private static string[] _blackPath;
-
-    // private static string _packageName;
+    private static bool _splitByShaderName;
     private static int _processMaxNum;
     private static Action _completedCallback;
 
@@ -51,7 +50,7 @@ public static class ShaderVariantCollector
     /// <summary>
     /// 开始收集
     /// </summary>
-    public static void Run(string savePath, string searchPath,string scenePath,string[] blackPath, int processMaxNum, Action completedCallback)
+    public static void Run(string savePath, string searchPath, string scenePath, string[] blackPath, int processMaxNum, bool splitByShaderName, Action completedCallback)
     {
         if (_steps != ESteps.None)
             return;
@@ -60,8 +59,6 @@ public static class ShaderVariantCollector
             savePath = $"{savePath}.shadervariants";
         if (Path.GetExtension(savePath) != ".shadervariants")
             throw new System.Exception("Shader variant file extension is invalid.");
-        // if (string.IsNullOrEmpty(packageName))
-        //     throw new System.Exception("Package name is null or empty !");
 
         // 注意：先删除再保存，否则ShaderVariantCollection内容将无法及时刷新
         AssetDatabase.DeleteAsset(savePath);
@@ -71,7 +68,7 @@ public static class ShaderVariantCollector
         _searchPath = searchPath;
         _scenePath = scenePath;
         _blackPath = blackPath;
-        // _packageName = packageName;
+        _splitByShaderName = splitByShaderName;
         _processMaxNum = processMaxNum;
         _completedCallback = completedCallback;
 
@@ -191,7 +188,7 @@ public static class ShaderVariantCollector
                 _steps = ESteps.None;
 
                 // 保存结果并创建清单
-                ShaderVariantCollectionHelper.SaveCurrentShaderVariantCollection(_savePath);
+                SaveShaderVariantCollection();
                 // CreateManifest();
 
                 Debug.Log($"搜集SVC完毕！");
@@ -408,8 +405,12 @@ public static class ShaderVariantCollector
         
     }
 
-    private static void CreateManifest()
+    private static void SaveShaderVariantCollection()
     {
+        AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
+
+        // 总是先保存完整的变体集，这样我们才能从中提取各个shader的变体
+        ShaderVariantCollectionHelper.SaveCurrentShaderVariantCollection(_savePath);
         AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
 
         ShaderVariantCollection svc = AssetDatabase.LoadAssetAtPath<ShaderVariantCollection>(_savePath);
@@ -419,6 +420,41 @@ public static class ShaderVariantCollector
             string jsonData = JsonUtility.ToJson(wrapper, true);
             string savePath = _savePath.Replace(".shadervariants", ".json");
             File.WriteAllText(savePath, jsonData);
+
+            if (_splitByShaderName)
+            {
+                string basePath = Path.GetDirectoryName(_savePath);
+                string baseName = Path.GetFileNameWithoutExtension(_savePath);
+                
+                foreach (var shaderInfo in wrapper.ShaderVariantInfos)
+                {
+                    string shaderName = shaderInfo.ShaderName;
+                    // 处理shader名称，将路径分隔符替换为下划线
+                    shaderName = shaderName.Replace('/', '_').Replace('\\', '_');
+                    // 直接使用shader名称作为文件名，不包含原始文件名
+                    string shaderSavePath = Path.Combine(basePath, $"{shaderName}.shadervariants");
+                    
+                    // 创建新的ShaderVariantCollection
+                    ShaderVariantCollection shaderSvc = new ShaderVariantCollection();
+                    
+                    // 添加该shader的所有变体
+                    Shader shader = AssetDatabase.LoadAssetAtPath<Shader>(shaderInfo.AssetPath);
+                    if (shader != null)
+                    {
+                        foreach (var variant in shaderInfo.ShaderVariantElements)
+                        {
+                            shaderSvc.Add(new ShaderVariantCollection.ShaderVariant(shader, variant.PassType, variant.Keywords));
+                        }
+                    }
+                    
+                    // 保存shader变体集
+                    AssetDatabase.CreateAsset(shaderSvc, shaderSavePath);
+                }
+                
+                // 如果选择了拆分保存，删除完整的变体集文件
+                AssetDatabase.DeleteAsset(_savePath);
+                AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
+            }
         }
 
         AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);

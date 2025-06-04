@@ -75,4 +75,16 @@ public class ShaderVariantCollectorSetting : ScriptableObject
         string key = $"{Application.productName}_{packageName}_GeBlackPath";
         EditorPrefs.SetString(key, scenePath);
     }
+
+    public static bool GetSplitByShaderName(string packageName)
+    {
+        string key = $"{Application.productName}_{packageName}_SplitByShaderName";
+        return EditorPrefs.GetBool(key, false);
+    }
+
+    public static void SetSplitByShaderName(string packageName, bool value)
+    {
+        string key = $"{Application.productName}_{packageName}_SplitByShaderName";
+        EditorPrefs.SetBool(key, value);
+    }
 }

@@ -12,5 +12,6 @@
     <ui:Label text="Current Variant Count" display-tooltip-when-elided="true" name="CurrentVariantCount" style="height: 20px; padding-left: 4px;" />
     <ui:Label text="Current Shader Count" display-tooltip-when-elided="true" name="CurrentShaderCount" style="height: 20px; padding-left: 4px;" />
     <ui:SliderInt picking-mode="Ignore" label="Capacity" value="9999" high-value="1000" name="ProcessCapacity" low-value="10" show-input-field="true" />
+    <ui:Toggle label="按Shader名称拆分保存" name="SplitByShaderNameToggle" style="height: 20px; padding-left: 4px;" />
     <ui:Button text="开始搜集" display-tooltip-when-elided="true" name="CollectButton" style="height: 50px; background-color: rgb(40, 106, 42); margin-top: 10px;" />
 </ui:UXML>
