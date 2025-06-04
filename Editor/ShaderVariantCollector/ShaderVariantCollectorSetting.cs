@@ -99,4 +99,18 @@ public class ShaderVariantCollectorSetting : ScriptableObject
         string key = $"{Application.productName}_{packageName}_CollectSceneVariants";
         EditorPrefs.SetBool(key, value);
     }
+
+    public static string[] GetGlobalKeywords(string packageName)
+    {
+        string key = $"{Application.productName}_{packageName}_GlobalKeywords";
+        string value = EditorPrefs.GetString(key, "");
+        return string.IsNullOrEmpty(value) ? new string[0] : value.Split(',');
+    }
+
+    public static void SetGlobalKeywords(string packageName, string[] keywords)
+    {
+        string key = $"{Application.productName}_{packageName}_GlobalKeywords";
+        string value = string.Join(",", keywords);
+        EditorPrefs.SetString(key, value);
+    }
 }

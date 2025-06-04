@@ -26,6 +26,9 @@ public static class ShaderVariantCollector
         CollectSceneVariants,
         CollectSceneSleeping,
         WaitingDone,
+        ApplyGlobalKeywords,
+        CollectGlobalKeywordsSleeping,
+        CollectGlobalKeywordsClearSleeping,
     }
 
     private const float WaitMilliseconds = 2000f;
@@ -38,6 +41,7 @@ public static class ShaderVariantCollector
     private static string[] _blackPath;
     private static bool _splitByShaderName;
     private static bool _collectSceneVariants;
+    private static string[] _globalKeywords;
     private static int _processMaxNum;
     private static Action _completedCallback;
 
@@ -45,6 +49,8 @@ public static class ShaderVariantCollector
     private static Stopwatch _elapsedTime;
     private static List<string> _allMaterials;
     private static List<GameObject> _allSpheres = new List<GameObject>(1000);
+    private static int _currentKeywordIndex = 0;
+    private static HashSet<Shader> _processedShaders = new HashSet<Shader>();
     
     private static List<string> _allScene;
     private static Scene _currentScene;
@@ -73,6 +79,7 @@ public static class ShaderVariantCollector
         _blackPath = blackPath;
         _splitByShaderName = splitByShaderName;
         _collectSceneVariants = ShaderVariantCollectorSetting.GetCollectSceneVariants("Default");
+        _globalKeywords = ShaderVariantCollectorSetting.GetGlobalKeywords("Default");
         _processMaxNum = processMaxNum;
         _completedCallback = completedCallback;
 
@@ -132,12 +139,53 @@ public static class ShaderVariantCollector
                 _elapsedTime = Stopwatch.StartNew();
                 _steps = ESteps.CollectSleeping;
             }
-            else
+            else if(_steps != ESteps.ApplyGlobalKeywords)
             {
                 _elapsedTime = Stopwatch.StartNew();
                 _steps = ESteps.CollectWaitToScene;
             }
         }
+
+        if (_steps == ESteps.ApplyGlobalKeywords)
+        {
+            _elapsedTime = Stopwatch.StartNew();
+            if (_currentKeywordIndex >= _globalKeywords.Length)
+            {
+                _steps = ESteps.CollectVariants;
+                return;
+            }
+
+            foreach (var go in _globalKeywords)
+            {
+                Shader.DisableKeyword(go);
+            }
+            
+            // 直接启用全局关键字
+            Shader.EnableKeyword(_globalKeywords[_currentKeywordIndex]);
+            _currentKeywordIndex++;
+            _steps = ESteps.CollectGlobalKeywordsSleeping;
+            return; //等待一帧
+        }
+
+        if (_steps == ESteps.CollectGlobalKeywordsSleeping)
+        {
+            if (_elapsedTime.ElapsedMilliseconds > SleepMilliseconds)
+            {
+                _elapsedTime = Stopwatch.StartNew();
+                _steps = ESteps.ApplyGlobalKeywords;
+                return;
+            }
+        }
+
+        // if (_steps == ESteps.CollectGlobalKeywordsClearSleeping)
+        // {
+        //     if (_elapsedTime.ElapsedMilliseconds > SleepMilliseconds)
+        //     {
+        //         _elapsedTime.Stop();
+        //         _steps = ESteps.ApplyGlobalKeywords;
+        //         return;
+        //     }
+        // }
 
         if (_steps == ESteps.CollectWaitToScene)
         {
@@ -305,6 +353,10 @@ public static class ShaderVariantCollector
     
     private static void CollectVariants(List<string> materials)
     {
+        if (materials.Count<= 0)
+        {
+            return;
+        }
         Camera camera = Camera.main;
         if (camera == null)
             throw new System.Exception("Not found main camera.");
@@ -330,7 +382,9 @@ public static class ShaderVariantCollector
             var position = new Vector3(x - halfWidth + 1f, y - halfHeight + 1f, 0f);
             var go = CreateSphere(material, position, i);
             if (go != null)
+            {
                 _allSpheres.Add(go);
+            }
             if (x == xMax)
             {
                 x = 0;
@@ -345,6 +399,13 @@ public static class ShaderVariantCollector
         }
 
         EditorTools.ClearProgressBar();
+
+        // 如果有全局关键字，开始逐个应用
+        if (_globalKeywords != null && _globalKeywords.Length > 0)
+        {
+            _currentKeywordIndex = 0;
+            _steps = ESteps.ApplyGlobalKeywords;
+        }
     }
     
     private static void CollectScene(string scenePath)
