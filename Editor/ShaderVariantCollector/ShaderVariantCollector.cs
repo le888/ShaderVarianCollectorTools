@@ -426,6 +426,8 @@ public static class ShaderVariantCollector
             alwaysIncludedShaderNames.AddRange(hideShader);
             // 过滤掉Always Included Shaders
             wrapper.ShaderVariantInfos.RemoveAll(info => alwaysIncludedShaderNames.Contains(info.ShaderName));
+            //过滤掉 shader 路径包含 Resources
+            wrapper.ShaderVariantInfos.RemoveAll(info => info.AssetPath.Contains("Resources"));
             
             string jsonData = JsonUtility.ToJson(wrapper, true);
             string savePath = _savePath.Replace(".shadervariants", ".json");
