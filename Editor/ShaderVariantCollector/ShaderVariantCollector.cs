@@ -137,7 +137,11 @@ public static class ShaderVariantCollector
             if (_allMaterials.Count > 0)
             {
                 _elapsedTime = Stopwatch.StartNew();
-                _steps = ESteps.CollectSleeping;
+                if (_globalKeywords.Length <= 0)
+                {
+                    _steps = ESteps.CollectSleeping;    
+                }
+                
             }
             else if(_steps != ESteps.ApplyGlobalKeywords)
             {
