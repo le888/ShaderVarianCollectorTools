@@ -168,7 +168,6 @@ public static class ShaderVariantCollector
             Shader.EnableKeyword(_globalKeywords[_currentKeywordIndex]);
             _currentKeywordIndex++;
             _steps = ESteps.CollectGlobalKeywordsSleeping;
-            return; //等待一帧
         }
 
         if (_steps == ESteps.CollectGlobalKeywordsSleeping)
