@@ -26,6 +26,7 @@ public static class ShaderVariantCollector
         CollectSceneVariants,
         CollectSceneSleeping,
         WaitingDone,
+        CollectWithWaitGlablKeyWords,
         ApplyGlobalKeywords,
         CollectGlobalKeywordsSleeping,
         CollectGlobalKeywordsClearSleeping,
@@ -48,6 +49,7 @@ public static class ShaderVariantCollector
     private static ESteps _steps = ESteps.None;
     private static Stopwatch _elapsedTime;
     private static List<string> _allMaterials;
+    private static List<string> _rangeMt;
     private static List<GameObject> _allSpheres = new List<GameObject>(1000);
     private static int _currentKeywordIndex = 0;
     private static HashSet<Shader> _processedShaders = new HashSet<Shader>();
@@ -92,11 +94,21 @@ public static class ShaderVariantCollector
         _steps = ESteps.Prepare;
         EditorApplication.update += EditorUpdate;
     }
-
+    
+    
     private static void EditorUpdate()
     {
         if (_steps == ESteps.None)
             return;
+
+        // 添加GUI显示
+        // if (Event.current.type == EventType.Repaint)
+        // {
+        //     string statusText = $"当前状态: {_steps}";
+        //     string timeText = _elapsedTime != null ? $"经过时间: {_elapsedTime.ElapsedMilliseconds}ms" : "经过时间: 0ms";
+        //     
+        //     Debug.Log( $"{statusText} {timeText}");
+        // }
 
         if (_steps == ESteps.Prepare)
         {
@@ -130,9 +142,9 @@ public static class ShaderVariantCollector
         if (_steps == ESteps.CollectVariants)
         {
             int count = Mathf.Min(_processMaxNum, _allMaterials.Count);
-            List<string> range = _allMaterials.GetRange(0, count);
+            _rangeMt = _allMaterials.GetRange(0, count);
             _allMaterials.RemoveRange(0, count);
-            CollectVariants(range);
+            CollectVariants(_rangeMt);
 
             if (_allMaterials.Count > 0)
             {
@@ -143,11 +155,20 @@ public static class ShaderVariantCollector
                 }
                 
             }
-            else if(_steps != ESteps.ApplyGlobalKeywords)
+            else if(_steps != ESteps.CollectWithWaitGlablKeyWords)
             {
                 _elapsedTime = Stopwatch.StartNew();
                 _steps = ESteps.CollectWaitToScene;
             }
+        }
+
+        if (_steps == ESteps.CollectWithWaitGlablKeyWords)
+        {
+            if (_elapsedTime.ElapsedMilliseconds > SleepMilliseconds)
+            {
+                _steps = ESteps.ApplyGlobalKeywords;
+            }
+
         }
 
         if (_steps == ESteps.ApplyGlobalKeywords)
@@ -165,7 +186,10 @@ public static class ShaderVariantCollector
             }
             
             // 直接启用全局关键字
-            Shader.EnableKeyword(_globalKeywords[_currentKeywordIndex]);
+            var keys = _globalKeywords[_currentKeywordIndex];
+            HandleKeyWorld(keys, true);
+            // Shader.EnableKeyword(_globalKeywords[_currentKeywordIndex]);
+            Debug.Log("keywword:"+ _globalKeywords[_currentKeywordIndex]);
             _currentKeywordIndex++;
             _steps = ESteps.CollectGlobalKeywordsSleeping;
         }
@@ -174,7 +198,14 @@ public static class ShaderVariantCollector
         {
             if (_elapsedTime.ElapsedMilliseconds > SleepMilliseconds)
             {
-                _elapsedTime = Stopwatch.StartNew();
+                _elapsedTime.Stop();
+                // 在应用下一个关键字之前，重新创建材质球体
+                if (_currentKeywordIndex < _globalKeywords.Length)
+                {
+                    DestroyAllSpheres();
+                    OnlyCreate(_rangeMt);
+                    _elapsedTime = Stopwatch.StartNew();
+                }
                 _steps = ESteps.ApplyGlobalKeywords;
                 return;
             }
@@ -295,6 +326,22 @@ public static class ShaderVariantCollector
 
         return materialsPaths.Distinct().ToList(); // Remove duplicates and return the list
     }
+
+    static void HandleKeyWorld(string keyworlds, bool enable = true)
+    {
+        var keys = keyworlds.Split(" ");
+        foreach (var key in keys)
+        {
+            if (enable)
+            {
+                Shader.EnableKeyword(key.Trim());   
+            }
+            else
+            {
+                Shader.DisableKeyword(key.Trim());
+            }
+        }
+    }
     
     public static List<string> GetAllMaterials()
     {
@@ -354,12 +401,8 @@ public static class ShaderVariantCollector
         return false;
     }
     
-    private static void CollectVariants(List<string> materials)
+    private static void OnlyCreate(List<string> materials)
     {
-        if (materials.Count<= 0)
-        {
-            return;
-        }
         Camera camera = Camera.main;
         if (camera == null)
             throw new System.Exception("Not found main camera.");
@@ -402,12 +445,25 @@ public static class ShaderVariantCollector
         }
 
         EditorTools.ClearProgressBar();
+    }
+    private static void CollectVariants(List<string> materials)
+    {
+        if (materials.Count<= 0)
+        {
+            return;
+        }
+        OnlyCreate(materials);
 
         // 如果有全局关键字，开始逐个应用
         if (_globalKeywords != null && _globalKeywords.Length > 0)
         {
+            _elapsedTime = Stopwatch.StartNew();
             _currentKeywordIndex = 0;
-            _steps = ESteps.ApplyGlobalKeywords;
+            foreach (var keyword in _globalKeywords)
+            {
+                HandleKeyWorld(keyword, false);
+            }
+            _steps = ESteps.CollectWithWaitGlablKeyWords;
         }
     }
     
