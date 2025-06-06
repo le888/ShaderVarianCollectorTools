@@ -26,7 +26,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
     private Toggle _collectSceneVariantsToggle;
 
     private List<string> _packageNames;
-    private string _currentPackageName = "Default";
+    private static string _currentPackageName = "Default";
     private List<string> _blackSceneNames;
     private List<string> _globalKeywords;
     private List<string> _filterShaderNames;
@@ -36,6 +36,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
     public VisualElement sceneCollectContainer;   // 存放列表项的容器  
     public VisualElement blacklistContainer;   // 存放列表项的容器  
     public VisualElement globalKeywordsContainer;   // 存放全局关键字的容器  
+    public VisualElement filterShaderNamesContainer;   // 存放过滤着色器名称的容器  
 
     public void CreateGUI()
     {
@@ -88,6 +89,10 @@ public class ShaderVariantCollectorWindow : EditorWindow
             
             Button addBlackButton = root.Q<Button>("addBlackButton");
             addBlackButton.clicked += OnAddSceneItem;
+
+            filterShaderNamesContainer = root.Q<VisualElement>("filterShaderNamesContainer");
+            Button addFilterShaderButton = root.Q<Button>("addFilterShaderButton");
+            addFilterShaderButton.clicked += OnAddFilterShaderItem;
 
             globalKeywordsContainer = root.Q<VisualElement>("globalKeywordsContainer");
             Button addGlobalKeywordButton = root.Q<Button>("addGlobalKeywordButton");
@@ -154,6 +159,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
             _collectButton.clicked += CollectButton_clicked;
             InitializeMaterialList();
             InitializeGlobalKeywords();
+            InitializeFilterShaderNames();
         }
         catch (Exception e)
         {
@@ -185,8 +191,19 @@ public class ShaderVariantCollectorWindow : EditorWindow
             _globalKeywords.Add(keyword);
         }
     }
-    
 
+    private void InitializeFilterShaderNames()
+    {
+        string[] shaderNames = ShaderVariantCollectorSetting.GetFilterShaderNames(_currentPackageName);
+        _filterShaderNames = new List<string>();
+        
+        foreach (string shaderName in shaderNames)
+        {
+            AddFilterShaderItem(shaderName);
+            _filterShaderNames.Add(shaderName);
+        }
+    }
+    
     private void OnAddSceneItem()
     {
         AddSceneItem("");
@@ -245,6 +262,44 @@ public class ShaderVariantCollectorWindow : EditorWindow
         container.Add(removeButton);
 
         globalKeywordsContainer.Add(container);
+    }
+
+    private void OnAddFilterShaderItem()
+    {
+        AddFilterShaderItem("");
+    }
+    
+    private void AddFilterShaderItem(string shaderName)
+    {
+        var container = new VisualElement();
+        container.style.flexDirection = FlexDirection.Row;
+        container.style.marginBottom = 5;
+
+        var textField = new TextField("着色器名称");
+        textField.value = shaderName;
+        textField.style.flexGrow = 1;
+        container.Add(textField);
+
+        var saveButton = new Button(() => 
+        {
+            if (!string.IsNullOrEmpty(textField.value))
+            {
+                SetFilterShaderName(textField.value);
+            }
+        }) { text = "保存" };
+        container.Add(saveButton);
+
+        var removeButton = new Button(() => 
+        {
+            if (!string.IsNullOrEmpty(textField.value))
+            {
+                SetFilterShaderName(textField.value, false);
+            }
+            filterShaderNamesContainer.Remove(container);
+        }) { text = "删除" };
+        container.Add(removeButton);
+
+        filterShaderNamesContainer.Add(container);
     }
 
     private void SetBlackScenePath(string newpath, bool isAdd = true)
@@ -308,6 +363,32 @@ public class ShaderVariantCollectorWindow : EditorWindow
         ShaderVariantCollectorSetting.SetGlobalKeywords(_currentPackageName, _globalKeywords.ToArray());
     }
 
+    private void SetFilterShaderName(string newShaderName, bool isAdd = true)
+    {
+        if (string.IsNullOrEmpty(newShaderName))
+            return;
+
+        if (isAdd)
+        {
+            if (_filterShaderNames.Contains(newShaderName))
+            {
+                return;
+            }
+            _filterShaderNames.Add(newShaderName);
+        }
+        else
+        {
+            if (!_filterShaderNames.Contains(newShaderName))
+            {
+                return;
+            }
+            _filterShaderNames.Remove(newShaderName);
+        }
+        
+        // 保存到设置中
+        ShaderVariantCollectorSetting.SetFilterShaderNames(_currentPackageName, _filterShaderNames.ToArray());
+    }
+
     private void Update()
     {
         if (_currentShaderCountField != null)
@@ -330,10 +411,10 @@ public class ShaderVariantCollectorWindow : EditorWindow
         string searchPath = ShaderVariantCollectorSetting.GeFileSearchPath(_currentPackageName);
         string searchScenePath = ShaderVariantCollectorSetting.GeSecneSearchPath(_currentPackageName);
         string[] blackPaths = ShaderVariantCollectorSetting.GeBlackPath(_currentPackageName);
-        string[] filterShaderName = ShaderVariantCollectorSetting.GeBlackPath(_currentPackageName);
+        string[] filterShaderName = _filterShaderNames.ToArray();
         bool splitByShaderName = ShaderVariantCollectorSetting.GetSplitByShaderName(_currentPackageName);
         int processCapacity = _processCapacitySlider.value;
-        ShaderVariantCollector.Run($"{savePath}/{svName}", searchPath, searchScenePath, blackPaths, filterShaderName,processCapacity, splitByShaderName, null);
+        ShaderVariantCollector.Run($"{savePath}/{svName}", searchPath, searchScenePath, blackPaths, filterShaderName, processCapacity, splitByShaderName, null);
     }
 
     // 构建包裹相关

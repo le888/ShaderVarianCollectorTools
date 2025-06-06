@@ -62,7 +62,7 @@ public static class ShaderVariantCollector
     /// <summary>
     /// 开始收集
     /// </summary>
-    public static void Run(string savePath, string searchPath, string scenePath, string[] blackPath,string[] filterShaderName, int processMaxNum, bool splitByShaderName, Action completedCallback)
+    public static void Run(string savePath, string searchPath, string scenePath, string[] blackPath, string[] filterShaderName, int processMaxNum, bool splitByShaderName, Action completedCallback)
     {
         if (_steps != ESteps.None)
             return;
@@ -80,11 +80,10 @@ public static class ShaderVariantCollector
         _searchPath = searchPath;
         _scenePath = scenePath;
         _blackPath = blackPath;
-        _filterShaderName = new HashSet<string>(filterShaderName);
         _splitByShaderName = splitByShaderName;
         _collectSceneVariants = ShaderVariantCollectorSetting.GetCollectSceneVariants("Default");
         _globalKeywords = ShaderVariantCollectorSetting.GetGlobalKeywords("Default");
-        _filterShaderName = new HashSet<string>(ShaderVariantCollectorSetting.GetFilterShaderNames(""));
+        _filterShaderName = new HashSet<string>(filterShaderName);
         _processMaxNum = processMaxNum;
         _completedCallback = completedCallback;
 
@@ -356,7 +355,15 @@ public static class ShaderVariantCollector
             string path = AssetDatabase.GUIDToAssetPath(guid);
             if (!IsBlack(path))
             {
-                materialPaths.Add(path);
+                Material material = AssetDatabase.LoadAssetAtPath<Material>(path);
+                if (material != null && material.shader != null)
+                {
+                    // 过滤着色器名称
+                    if (_filterShaderName == null || !_filterShaderName.Contains(material.shader.name))
+                    {
+                        materialPaths.Add(path);
+                    }
+                }
             }
         }
     
@@ -568,6 +575,11 @@ public static class ShaderVariantCollector
             wrapper.ShaderVariantInfos.RemoveAll(info => alwaysIncludedShaderNames.Contains(info.ShaderName));
             //过滤掉 shader 路径包含 Resources
             wrapper.ShaderVariantInfos.RemoveAll(info => info.AssetPath.Contains("Resources"));
+            // 过滤掉指定的着色器名称
+            if (_filterShaderName != null && _filterShaderName.Count > 0)
+            {
+                wrapper.ShaderVariantInfos.RemoveAll(info => _filterShaderName.Contains(info.ShaderName));
+            }
             
             string jsonData = JsonUtility.ToJson(wrapper, true);
             string savePath = _savePath.Replace(".shadervariants", ".json");
