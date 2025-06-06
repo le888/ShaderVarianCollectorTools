@@ -113,4 +113,18 @@ public class ShaderVariantCollectorSetting : ScriptableObject
         string value = string.Join(",", keywords);
         EditorPrefs.SetString(key, value);
     }
+    
+    public static string[] GetFilterShaderNames(string packageName)
+    {
+        string key = $"{Application.productName}_{packageName}_FilterShaderNames";
+        string value = EditorPrefs.GetString(key, "");
+        return string.IsNullOrEmpty(value) ? new string[0] : value.Split(',');
+    }
+    
+    public static void SetFilterShaderNames(string packageName, string[] filterNames)
+    {
+        string key = $"{Application.productName}_{packageName}_FilterShaderNames";
+        string value = string.Join(",", filterNames);
+        EditorPrefs.SetString(key, value);
+    }
 }

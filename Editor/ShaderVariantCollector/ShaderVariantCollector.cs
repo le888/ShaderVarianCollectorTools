@@ -43,6 +43,7 @@ public static class ShaderVariantCollector
     private static bool _splitByShaderName;
     private static bool _collectSceneVariants;
     private static string[] _globalKeywords;
+    public static HashSet<string> _filterShaderName;
     private static int _processMaxNum;
     private static Action _completedCallback;
 
@@ -61,7 +62,7 @@ public static class ShaderVariantCollector
     /// <summary>
     /// 开始收集
     /// </summary>
-    public static void Run(string savePath, string searchPath, string scenePath, string[] blackPath, int processMaxNum, bool splitByShaderName, Action completedCallback)
+    public static void Run(string savePath, string searchPath, string scenePath, string[] blackPath,string[] filterShaderName, int processMaxNum, bool splitByShaderName, Action completedCallback)
     {
         if (_steps != ESteps.None)
             return;
@@ -79,9 +80,11 @@ public static class ShaderVariantCollector
         _searchPath = searchPath;
         _scenePath = scenePath;
         _blackPath = blackPath;
+        _filterShaderName = new HashSet<string>(filterShaderName);
         _splitByShaderName = splitByShaderName;
         _collectSceneVariants = ShaderVariantCollectorSetting.GetCollectSceneVariants("Default");
         _globalKeywords = ShaderVariantCollectorSetting.GetGlobalKeywords("Default");
+        _filterShaderName = new HashSet<string>(ShaderVariantCollectorSetting.GetFilterShaderNames(""));
         _processMaxNum = processMaxNum;
         _completedCallback = completedCallback;
 
@@ -507,6 +510,13 @@ public static class ShaderVariantCollector
         var shader = material.shader;
         if (shader == null)
             return null;
+        
+        //过滤shader _filterShaderName
+        
+        if (_filterShaderName != null && _filterShaderName.Contains(shader.name))
+        {
+            return null;
+        }
 
         var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         go.GetComponent<Renderer>().sharedMaterial = material;

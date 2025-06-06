@@ -29,6 +29,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
     private string _currentPackageName = "Default";
     private List<string> _blackSceneNames;
     private List<string> _globalKeywords;
+    private List<string> _filterShaderNames;
     
     public VisualElement outputContainer;   // 存放列表项的容器  
     public VisualElement prefabCollectContainer;   // 存放列表项的容器  
@@ -184,6 +185,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
             _globalKeywords.Add(keyword);
         }
     }
+    
 
     private void OnAddSceneItem()
     {
@@ -328,9 +330,10 @@ public class ShaderVariantCollectorWindow : EditorWindow
         string searchPath = ShaderVariantCollectorSetting.GeFileSearchPath(_currentPackageName);
         string searchScenePath = ShaderVariantCollectorSetting.GeSecneSearchPath(_currentPackageName);
         string[] blackPaths = ShaderVariantCollectorSetting.GeBlackPath(_currentPackageName);
+        string[] filterShaderName = ShaderVariantCollectorSetting.GeBlackPath(_currentPackageName);
         bool splitByShaderName = ShaderVariantCollectorSetting.GetSplitByShaderName(_currentPackageName);
         int processCapacity = _processCapacitySlider.value;
-        ShaderVariantCollector.Run($"{savePath}/{svName}", searchPath, searchScenePath, blackPaths, processCapacity, splitByShaderName, null);
+        ShaderVariantCollector.Run($"{savePath}/{svName}", searchPath, searchScenePath, blackPaths, filterShaderName,processCapacity, splitByShaderName, null);
     }
 
     // 构建包裹相关
