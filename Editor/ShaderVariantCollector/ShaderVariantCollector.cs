@@ -89,6 +89,11 @@ public static class ShaderVariantCollector
         _processMaxNum = processMaxNum;
         _completedCallback = completedCallback;
 
+        // 确保在开始前重置所有状态
+        _currentKeywordIndex = 0;
+        _processedShaders.Clear();
+        _allSpheres.Clear();
+
         // 聚焦到游戏窗口
         EditorTools.FocusUnityGameWindow();
 
@@ -180,20 +185,26 @@ public static class ShaderVariantCollector
             _elapsedTime = Stopwatch.StartNew();
             if (_currentKeywordIndex >= _globalKeywords.Length)
             {
+                // 确保在完成所有全局关键字处理后，重置所有关键字状态
+                foreach (var keyword in _globalKeywords)
+                {
+                    HandleKeyWorld(keyword, false);
+                }
+                _currentKeywordIndex = 0;
                 _steps = ESteps.CollectVariants;
                 return;
             }
 
-            foreach (var go in _globalKeywords)
+            // 先禁用所有全局关键字，确保干净的状态
+            foreach (var keyword in _globalKeywords)
             {
-                Shader.DisableKeyword(go);
+                HandleKeyWorld(keyword, false);
             }
             
-            // 直接启用全局关键字
-            var keys = _globalKeywords[_currentKeywordIndex];
-            HandleKeyWorld(keys, true);
-            // Shader.EnableKeyword(_globalKeywords[_currentKeywordIndex]);
-            Debug.Log("keywword:"+ _globalKeywords[_currentKeywordIndex]);
+            // 启用当前关键字
+            var currentKeyword = _globalKeywords[_currentKeywordIndex];
+            HandleKeyWorld(currentKeyword, true);
+            Debug.Log("应用全局关键字: " + currentKeyword);
             _currentKeywordIndex++;
             _steps = ESteps.CollectGlobalKeywordsSleeping;
         }
@@ -523,6 +534,25 @@ public static class ShaderVariantCollector
         camera.transform.position = Vector3.Lerp(starPos, endPos, elapsedTimeElapsedMilliseconds / SleepSceneMilliseconds);
     }
 
+    // 添加KeywordHolder组件用于管理关键字的生命周期
+    private class KeywordHolder : MonoBehaviour
+    {
+        public Material material;
+        public List<string> appliedKeywords = new List<string>();
+
+        private void OnDestroy()
+        {
+            // 在GameObject销毁时，禁用之前启用的所有局部关键字
+            if (material != null)
+            {
+                foreach (var keyword in appliedKeywords)
+                {
+                    HandleLocalKeyWorld(material, keyword, false);
+                }
+            }
+        }
+    }
+    
     private static GameObject CreateSphere(string assetPath, Vector3 position, int index)
     {
         var material = AssetDatabase.LoadAssetAtPath<Material>(assetPath);
@@ -543,28 +573,40 @@ public static class ShaderVariantCollector
             return null;
         }
 
-        // 应用局部关键字
-        if (_localKeywords != null)
-        {
-            List<string> keywords = _localKeywords.GetKeywordsForShader(shader.name);
-            foreach (var keyword in keywords)
-            {
-                HandleLocalKeyWorld(material,keyword, true);    
-            }
-        }
-
         var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         go.GetComponent<Renderer>().sharedMaterial = material;
         go.transform.position = position;
         go.name = $"Sphere_{index} | {material.name}";
+        
+        // 应用局部关键字并添加KeywordHolder组件来管理关键字生命周期
+        if (_localKeywords != null)
+        {
+            List<string> keywords = _localKeywords.GetKeywordsForShader(shader.name);
+            if (keywords.Count > 0)
+            {
+                var keywordHolder = go.AddComponent<KeywordHolder>();
+                keywordHolder.material = material;
+                keywordHolder.appliedKeywords.AddRange(keywords);
+                
+                foreach (var keyword in keywords)
+                {
+                    HandleLocalKeyWorld(material, keyword, true);    
+                }
+            }
+        }
+        
         return go;
     }
 
     private static void DestroyAllSpheres()
     {
+        // 确保在销毁球体前，KeywordHolder组件的OnDestroy会被调用，清理关键字状态
         foreach (var go in _allSpheres)
         {
-            GameObject.DestroyImmediate(go);
+            if (go != null)
+            {
+                GameObject.DestroyImmediate(go);
+            }
         }
 
         _allSpheres.Clear();
