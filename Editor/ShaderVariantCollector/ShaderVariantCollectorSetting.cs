@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEditor;
 
 public class ShaderVariantCollectorSetting : ScriptableObject
@@ -111,6 +111,22 @@ public class ShaderVariantCollectorSetting : ScriptableObject
     {
         string key = $"{Application.productName}_{packageName}_GlobalKeywords";
         string value = string.Join(",", keywords);
+        EditorPrefs.SetString(key, value);
+    }
+    
+    public static LocalKeywordCollection GetLocalKeywords(string packageName)
+    {
+        string key = $"{Application.productName}_{packageName}_LocalKeywords";
+        string value = EditorPrefs.GetString(key, "");
+        string[] data = string.IsNullOrEmpty(value) ? new string[0] : value.Split(',');
+        return LocalKeywordCollection.FromStringArray(data);
+    }
+    
+    public static void SetLocalKeywords(string packageName, LocalKeywordCollection localKeywords)
+    {
+        string key = $"{Application.productName}_{packageName}_LocalKeywords";
+        string[] data = localKeywords.ToStringArray();
+        string value = string.Join(",", data);
         EditorPrefs.SetString(key, value);
     }
     

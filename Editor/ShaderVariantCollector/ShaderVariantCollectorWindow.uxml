@@ -12,6 +12,9 @@
     <ui:VisualElement name="filterShaderNamesContainer" style="flex-grow: 1; height: 100px; flex-direction: column; align-items: stretch; width: auto; justify-content: flex-start; align-self: auto;">
         <ui:Button text="添加过滤着色器" parse-escape-sequences="true" display-tooltip-when-elided="true" name="addFilterShaderButton" enable-rich-text="true" style="-unity-text-align: middle-center; height: 20px; width: auto; white-space: nowrap; text-overflow: clip;" />
     </ui:VisualElement>
+    <ui:VisualElement name="localKeywordsContainer" style="flex-grow: 1; height: 100px; flex-direction: column; align-items: stretch; width: auto; justify-content: flex-start; align-self: auto;">
+        <ui:Button text="添加局部关键字" parse-escape-sequences="true" display-tooltip-when-elided="true" name="addLocalKeywordButton" enable-rich-text="true" style="-unity-text-align: middle-center; height: 20px; width: auto; white-space: nowrap; text-overflow: clip;" />
+    </ui:VisualElement>
     <ui:VisualElement name="globalKeywordsContainer" style="flex-grow: 1; height: 100px; flex-direction: column; align-items: stretch; width: auto; justify-content: flex-start; align-self: auto;">
         <ui:Button text="添加全局关键字" parse-escape-sequences="true" display-tooltip-when-elided="true" name="addGlobalKeywordButton" enable-rich-text="true" style="-unity-text-align: middle-center; height: 20px; width: auto; white-space: nowrap; text-overflow: clip;" />
     </ui:VisualElement>

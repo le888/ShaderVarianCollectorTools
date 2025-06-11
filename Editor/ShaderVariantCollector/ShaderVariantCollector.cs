@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -43,6 +43,7 @@ public static class ShaderVariantCollector
     private static bool _splitByShaderName;
     private static bool _collectSceneVariants;
     private static string[] _globalKeywords;
+    private static LocalKeywordCollection _localKeywords;
     public static HashSet<string> _filterShaderName;
     private static int _processMaxNum;
     private static Action _completedCallback;
@@ -83,6 +84,7 @@ public static class ShaderVariantCollector
         _splitByShaderName = splitByShaderName;
         _collectSceneVariants = ShaderVariantCollectorSetting.GetCollectSceneVariants("Default");
         _globalKeywords = ShaderVariantCollectorSetting.GetGlobalKeywords("Default");
+        _localKeywords = ShaderVariantCollectorSetting.GetLocalKeywords("Default");
         _filterShaderName = new HashSet<string>(filterShaderName);
         _processMaxNum = processMaxNum;
         _completedCallback = completedCallback;
@@ -345,6 +347,22 @@ public static class ShaderVariantCollector
         }
     }
     
+    static void HandleLocalKeyWorld(Material mt,string keyworlds, bool enable = true)
+    {
+        var keys = keyworlds.Split(" ");
+        foreach (var key in keys)
+        {
+            if (enable)
+            {
+                mt.EnableKeyword(key.Trim());   
+            }
+            else
+            {
+                mt.DisableKeyword(key.Trim());
+            }
+        }
+    }
+    
     public static List<string> GetAllMaterials()
     {
         List<string> materialPaths = new List<string>();
@@ -523,6 +541,16 @@ public static class ShaderVariantCollector
         if (_filterShaderName != null && _filterShaderName.Contains(shader.name))
         {
             return null;
+        }
+
+        // 应用局部关键字
+        if (_localKeywords != null)
+        {
+            List<string> keywords = _localKeywords.GetKeywordsForShader(shader.name);
+            foreach (var keyword in keywords)
+            {
+                HandleLocalKeyWorld(material,keyword, true);    
+            }
         }
 
         var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);

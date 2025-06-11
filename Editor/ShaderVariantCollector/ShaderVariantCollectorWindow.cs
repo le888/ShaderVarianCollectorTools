@@ -1,4 +1,4 @@
-﻿// #if UNITY_2019_4_OR_NEWER
+// #if UNITY_2019_4_OR_NEWER
 using System;
 using System.Linq;
 using System.Collections.Generic;
@@ -30,12 +30,14 @@ public class ShaderVariantCollectorWindow : EditorWindow
     private List<string> _blackSceneNames;
     private List<string> _globalKeywords;
     private List<string> _filterShaderNames;
+    private LocalKeywordCollection _localKeywords;
     
     public VisualElement outputContainer;   // 存放列表项的容器  
     public VisualElement prefabCollectContainer;   // 存放列表项的容器  
     public VisualElement sceneCollectContainer;   // 存放列表项的容器  
     public VisualElement blacklistContainer;   // 存放列表项的容器  
     public VisualElement globalKeywordsContainer;   // 存放全局关键字的容器  
+    public VisualElement localKeywordsContainer;   // 存放局部关键字的容器  
     public VisualElement filterShaderNamesContainer;   // 存放过滤着色器名称的容器  
 
     public void CreateGUI()
@@ -93,6 +95,10 @@ public class ShaderVariantCollectorWindow : EditorWindow
             filterShaderNamesContainer = root.Q<VisualElement>("filterShaderNamesContainer");
             Button addFilterShaderButton = root.Q<Button>("addFilterShaderButton");
             addFilterShaderButton.clicked += OnAddFilterShaderItem;
+
+            localKeywordsContainer = root.Q<VisualElement>("localKeywordsContainer");
+            Button addLocalKeywordButton = root.Q<Button>("addLocalKeywordButton");
+            addLocalKeywordButton.clicked += OnAddLocalKeyword;
 
             globalKeywordsContainer = root.Q<VisualElement>("globalKeywordsContainer");
             Button addGlobalKeywordButton = root.Q<Button>("addGlobalKeywordButton");
@@ -159,6 +165,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
             _collectButton.clicked += CollectButton_clicked;
             InitializeMaterialList();
             InitializeGlobalKeywords();
+            InitializeLocalKeywords();
             InitializeFilterShaderNames();
         }
         catch (Exception e)
@@ -189,6 +196,16 @@ public class ShaderVariantCollectorWindow : EditorWindow
         {
             AddGlobalKeywordItem(keyword);
             _globalKeywords.Add(keyword);
+        }
+    }
+
+    private void InitializeLocalKeywords()
+    {
+        _localKeywords = ShaderVariantCollectorSetting.GetLocalKeywords(_currentPackageName);
+        
+        foreach (var localKeyword in _localKeywords.LocalKeywords)
+        {
+            AddLocalKeywordItem(localKeyword.ShaderName, localKeyword.Keyword);
         }
     }
 
@@ -262,6 +279,49 @@ public class ShaderVariantCollectorWindow : EditorWindow
         container.Add(removeButton);
 
         globalKeywordsContainer.Add(container);
+    }
+
+    private void OnAddLocalKeyword()
+    {
+        AddLocalKeywordItem("", "");
+    }
+    
+    private void AddLocalKeywordItem(string shaderName, string keyword)
+    {
+        var container = new VisualElement();
+        container.style.flexDirection = FlexDirection.Row;
+        container.style.marginBottom = 5;
+
+        var shaderNameField = new TextField("着色器名称");
+        shaderNameField.value = shaderName;
+        shaderNameField.style.flexGrow = 1;
+        container.Add(shaderNameField);
+
+        var keywordField = new TextField("关键字");
+        keywordField.value = keyword;
+        keywordField.style.flexGrow = 1;
+        container.Add(keywordField);
+
+        var saveButton = new Button(() => 
+        {
+            if (!string.IsNullOrEmpty(shaderNameField.value) && !string.IsNullOrEmpty(keywordField.value))
+            {
+                SetLocalKeyword(shaderNameField.value, keywordField.value);
+            }
+        }) { text = "保存" };
+        container.Add(saveButton);
+
+        var removeButton = new Button(() => 
+        {
+            if (!string.IsNullOrEmpty(shaderNameField.value) && !string.IsNullOrEmpty(keywordField.value))
+            {
+                SetLocalKeyword(shaderNameField.value, keywordField.value, false);
+            }
+            localKeywordsContainer.Remove(container);
+        }) { text = "删除" };
+        container.Add(removeButton);
+
+        localKeywordsContainer.Add(container);
     }
 
     private void OnAddFilterShaderItem()
@@ -361,6 +421,24 @@ public class ShaderVariantCollectorWindow : EditorWindow
         
         // 保存到设置中
         ShaderVariantCollectorSetting.SetGlobalKeywords(_currentPackageName, _globalKeywords.ToArray());
+    }
+
+    private void SetLocalKeyword(string shaderName, string keyword, bool isAdd = true)
+    {
+        if (string.IsNullOrEmpty(shaderName) || string.IsNullOrEmpty(keyword))
+            return;
+
+        if (isAdd)
+        {
+            _localKeywords.AddLocalKeyword(shaderName, keyword);
+        }
+        else
+        {
+            _localKeywords.RemoveLocalKeyword(shaderName, keyword);
+        }
+        
+        // 保存到设置中
+        ShaderVariantCollectorSetting.SetLocalKeywords(_currentPackageName, _localKeywords);
     }
 
     private void SetFilterShaderName(string newShaderName, bool isAdd = true)
