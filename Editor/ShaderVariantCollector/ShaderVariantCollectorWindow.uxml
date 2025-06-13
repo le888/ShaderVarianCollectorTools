@@ -23,5 +23,6 @@
     <ui:SliderInt picking-mode="Ignore" label="Capacity" value="9999" high-value="1000" name="ProcessCapacity" low-value="10" show-input-field="true" />
     <ui:Toggle label="按Shader名称拆分保存" name="SplitByShaderNameToggle" style="height: 20px; padding-left: 4px;" />
     <ui:Toggle label="收集场景变体" name="CollectSceneVariantsToggle" style="height: 20px; padding-left: 4px;" />
+    <ui:Toggle label="保存变体JSON文件" name="SaveJsonFileToggle" style="height: 20px; padding-left: 4px;" />
     <ui:Button text="开始搜集" display-tooltip-when-elided="true" name="CollectButton" style="height: 50px; background-color: rgb(40, 106, 42); margin-top: 10px;" />
 </ui:UXML>

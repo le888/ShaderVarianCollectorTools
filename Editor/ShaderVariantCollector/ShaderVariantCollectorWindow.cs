@@ -24,6 +24,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
     private PopupField<string> _packageField;
     private Toggle _splitByShaderNameToggle;
     private Toggle _collectSceneVariantsToggle;
+    private Toggle _saveJsonFileToggle;
 
     private List<string> _packageNames;
     private static string _currentPackageName = "Default";
@@ -158,6 +159,13 @@ public class ShaderVariantCollectorWindow : EditorWindow
             _collectSceneVariantsToggle.RegisterValueChangedCallback(evt =>
             {
                 ShaderVariantCollectorSetting.SetCollectSceneVariants(_currentPackageName, evt.newValue);
+            });
+            
+            _saveJsonFileToggle = root.Q<Toggle>("SaveJsonFileToggle");
+            _saveJsonFileToggle.SetValueWithoutNotify(ShaderVariantCollectorSetting.GetSaveJsonFile(_currentPackageName));
+            _saveJsonFileToggle.RegisterValueChangedCallback(evt =>
+            {
+                ShaderVariantCollectorSetting.SetSaveJsonFile(_currentPackageName, evt.newValue);
             });
 
             // 变种收集按钮
@@ -516,7 +524,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
         string[] filterShaderName = _filterShaderNames.ToArray();
         bool splitByShaderName = ShaderVariantCollectorSetting.GetSplitByShaderName(_currentPackageName);
         int processCapacity = _processCapacitySlider.value;
-        ShaderVariantCollector.Run($"{savePath}/{svName}", searchPath, searchScenePath, blackPaths, filterShaderName, processCapacity, splitByShaderName, null);
+        ShaderVariantCollector.Run($"{savePath}/{svName}", searchPath, searchScenePath, blackPaths, filterShaderName, processCapacity, splitByShaderName, null, _currentPackageName);
     }
 
     // 构建包裹相关

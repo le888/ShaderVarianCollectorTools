@@ -46,6 +46,7 @@ public class ShaderVariantCollectorSetting : ScriptableObject
     public List<string> blackPaths = new List<string>() { "Assets" };
     public bool splitByShaderName = false;
     public bool collectSceneVariants = false;
+    public bool saveJsonFile = false;
     public List<string> globalKeywords = new List<string>();
     public LocalKeywordCollection localKeywordsCollection = new LocalKeywordCollection();
     public List<string> filterShaderNames = new List<string>();
@@ -152,6 +153,18 @@ public class ShaderVariantCollectorSetting : ScriptableObject
     {
         ShaderVariantCollectorSetting settings = GetSettings();
         settings.collectSceneVariants = value;
+        SaveSettings(settings);
+    }
+    
+    public static bool GetSaveJsonFile(string packageName)
+    {
+        return GetSettings().saveJsonFile;
+    }
+
+    public static void SetSaveJsonFile(string packageName, bool value)
+    {
+        ShaderVariantCollectorSetting settings = GetSettings();
+        settings.saveJsonFile = value;
         SaveSettings(settings);
     }
 

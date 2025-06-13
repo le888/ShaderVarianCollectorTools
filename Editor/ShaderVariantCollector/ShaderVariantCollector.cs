@@ -47,6 +47,7 @@ public static class ShaderVariantCollector
     public static HashSet<string> _filterShaderName;
     private static int _processMaxNum;
     private static Action _completedCallback;
+    private static string _currentPackageName = "Default";
 
     private static ESteps _steps = ESteps.None;
     private static Stopwatch _elapsedTime;
@@ -63,7 +64,7 @@ public static class ShaderVariantCollector
     /// <summary>
     /// 开始收集
     /// </summary>
-    public static void Run(string savePath, string searchPath, string scenePath, List<string> blackPath, string[] filterShaderName, int processMaxNum, bool splitByShaderName, Action completedCallback)
+    public static void Run(string savePath, string searchPath, string scenePath, List<string> blackPath, string[] filterShaderName, int processMaxNum, bool splitByShaderName, Action completedCallback, string packageName = "Default")
     {
         if (_steps != ESteps.None)
             return;
@@ -82,9 +83,10 @@ public static class ShaderVariantCollector
         _scenePath = scenePath;
         _blackPath = blackPath;
         _splitByShaderName = splitByShaderName;
-        _collectSceneVariants = ShaderVariantCollectorSetting.GetCollectSceneVariants("Default");
-        _globalKeywords = ShaderVariantCollectorSetting.GetGlobalKeywords("Default");
-        _localKeywords = ShaderVariantCollectorSetting.GetLocalKeywords("Default");
+        _currentPackageName = packageName;
+        _collectSceneVariants = ShaderVariantCollectorSetting.GetCollectSceneVariants(packageName);
+        _globalKeywords = ShaderVariantCollectorSetting.GetGlobalKeywords(packageName);
+        _localKeywords = ShaderVariantCollectorSetting.GetLocalKeywords(packageName);
         _filterShaderName = new HashSet<string>(filterShaderName);
         _processMaxNum = processMaxNum;
         _completedCallback = completedCallback;
@@ -651,8 +653,14 @@ public static class ShaderVariantCollector
             }
             
             string jsonData = JsonUtility.ToJson(wrapper, true);
-            string savePath = _savePath.Replace(".shadervariants", ".json");
-            File.WriteAllText(savePath, jsonData);
+            
+            // 根据设置决定是否保存JSON文件
+            bool saveJsonFile = ShaderVariantCollectorSetting.GetSaveJsonFile(_currentPackageName);
+            if (saveJsonFile)
+            {
+                string savePath = _savePath.Replace(".shadervariants", ".json");
+                File.WriteAllText(savePath, jsonData);
+            }
 
             if (_splitByShaderName)
             {
