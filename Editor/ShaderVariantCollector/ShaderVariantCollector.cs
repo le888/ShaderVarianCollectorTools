@@ -14,6 +14,11 @@ using Debug = UnityEngine.Debug;
 
 public static class ShaderVariantCollector
 {
+    public struct MaterialInfo
+    {
+        public string path;
+        public string keyword;
+    }
     private enum ESteps
     {
         None,
@@ -51,8 +56,8 @@ public static class ShaderVariantCollector
 
     private static ESteps _steps = ESteps.None;
     private static Stopwatch _elapsedTime;
-    private static List<string> _allMaterials;
-    private static List<string> _rangeMt;
+    private static List<MaterialInfo> _allMaterials;
+    private static List<MaterialInfo> _rangeMt;
     private static List<GameObject> _allSpheres = new List<GameObject>(1000);
     private static int _currentKeywordIndex = 0;
     private static HashSet<Shader> _processedShaders = new HashSet<Shader>();
@@ -376,9 +381,9 @@ public static class ShaderVariantCollector
         }
     }
     
-    public static List<string> GetAllMaterials()
+    public static List<MaterialInfo> GetAllMaterials()
     {
-        List<string> materialPaths = new List<string>();
+        List<MaterialInfo> materials = new List<MaterialInfo>();
         string[] materialGuids = AssetDatabase.FindAssets("t:Material", new[] { _searchPath });
     
         foreach (string guid in materialGuids)
@@ -392,13 +397,34 @@ public static class ShaderVariantCollector
                     // 过滤着色器名称
                     if (_filterShaderName == null || !_filterShaderName.Contains(material.shader.name))
                     {
-                        materialPaths.Add(path);
+                        materials.Add(new MaterialInfo()
+                        {
+                            path = path,
+                            keyword =""
+                        });
+                        
+                        //local 关键字
+                        if (_localKeywords != null)
+                        {
+                            List<string> keywords = _localKeywords.GetKeywordsForShader(material.shader.name);
+                            if (keywords.Count > 0)
+                            {
+                                foreach (var keyword in keywords)
+                                {
+                                    materials.Add(new  MaterialInfo()
+                                    {
+                                        path = path,
+                                        keyword = keyword
+                                    });
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
     
-        return materialPaths;
+        return materials;
     }
     
     // private static List<string> GetAllMaterials()
@@ -441,7 +467,7 @@ public static class ShaderVariantCollector
         return false;
     }
     
-    private static void OnlyCreate(List<string> materials)
+    private static void OnlyCreate(List<MaterialInfo> materials)
     {
         Camera camera = Camera.main;
         if (camera == null)
@@ -486,7 +512,7 @@ public static class ShaderVariantCollector
 
         EditorTools.ClearProgressBar();
     }
-    private static void CollectVariants(List<string> materials)
+    private static void CollectVariants(List<MaterialInfo> materials)
     {
         if (materials.Count<= 0)
         {
@@ -554,10 +580,11 @@ public static class ShaderVariantCollector
         }
     }
     
-    private static GameObject CreateSphere(string assetPath, Vector3 position, int index)
+    private static GameObject CreateSphere(MaterialInfo materialInfo, Vector3 position, int index)
     {
-        var material = AssetDatabase.LoadAssetAtPath<Material>(assetPath);
-
+        var materialO = AssetDatabase.LoadAssetAtPath<Material>(materialInfo.path);
+        //创建一个材质实列
+        var material = Material.Instantiate(materialO);
         if (material == null)
         {
             return null;
@@ -569,9 +596,14 @@ public static class ShaderVariantCollector
         
         //过滤shader _filterShaderName
         
-        if (_filterShaderName != null && _filterShaderName.Contains(shader.name))
+        // if (_filterShaderName != null && _filterShaderName.Contains(shader.name))
+        // {
+        //     return null;
+        // }
+
+        if (!string.IsNullOrEmpty(materialInfo.keyword))
         {
-            return null;
+            HandleLocalKeyWorld(material, materialInfo.keyword, true);
         }
 
         var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
@@ -579,22 +611,22 @@ public static class ShaderVariantCollector
         go.transform.position = position;
         go.name = $"Sphere_{index} | {material.name}";
         
-        // 应用局部关键字并添加KeywordHolder组件来管理关键字生命周期
-        if (_localKeywords != null)
-        {
-            List<string> keywords = _localKeywords.GetKeywordsForShader(shader.name);
-            if (keywords.Count > 0)
-            {
-                var keywordHolder = go.AddComponent<KeywordHolder>();
-                keywordHolder.material = material;
-                keywordHolder.appliedKeywords.AddRange(keywords);
-                
-                foreach (var keyword in keywords)
-                {
-                    HandleLocalKeyWorld(material, keyword, true);    
-                }
-            }
-        }
+        //// 应用局部关键字并添加KeywordHolder组件来管理关键字生命周期
+        // if (_localKeywords != null)
+        // {
+        //     List<string> keywords = _localKeywords.GetKeywordsForShader(shader.name);
+        //     if (keywords.Count > 0)
+        //     {
+        //         var keywordHolder = go.AddComponent<KeywordHolder>();
+        //         keywordHolder.material = material;
+        //         keywordHolder.appliedKeywords.AddRange(keywords);
+        //         
+        //         foreach (var keyword in keywords)
+        //         {
+        //             HandleLocalKeyWorld(material, keyword, true);    
+        //         }
+        //     }
+        // }
         
         return go;
     }

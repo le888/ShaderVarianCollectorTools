@@ -15,11 +15,12 @@ MonoBehaviour:
   fileName: MyShaderVariants.shadervariants
   fileSavePath: Assets/Scenes/vs
   processCapacity: 1000
-  fileSearchPath: Assets
+  fileSearchPath: Assets/BlendAdd
   sceneSearchPath: Assets
   blackPaths: []
   splitByShaderName: 1
   collectSceneVariants: 0
+  saveJsonFile: 0
   globalKeywords:
   - _TEST_VVV
   - _TEST_VVV2
@@ -28,5 +29,7 @@ MonoBehaviour:
     LocalKeywords:
     - ShaderName: Custom/BlendAddEffect
       Keyword: _BBBC
+    - ShaderName: Custom/BlendAddEffect
+      Keyword: _XXXY
   filterShaderNames:
   - TestDecal
