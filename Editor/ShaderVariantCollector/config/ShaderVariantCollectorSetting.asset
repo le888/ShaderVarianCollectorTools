@@ -17,7 +17,8 @@ MonoBehaviour:
   processCapacity: 1000
   fileSearchPath: Assets
   sceneSearchPath: Assets
-  blackPaths: []
+  blackPaths:
+  - 
   splitByShaderName: 1
   collectSceneVariants: 0
   globalKeywords:
