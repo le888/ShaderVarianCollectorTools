@@ -397,6 +397,14 @@ public class ShaderVariantCollectorWindow : EditorWindow
             _blackSceneNames.Remove(newpath);
         }
         
+        // 如果黑名单为空，直接传递空列表
+        if (_blackSceneNames.Count == 0)
+        {
+            ShaderVariantCollectorSetting.SetBlackPaths(_currentPackageName, _blackSceneNames);
+            return;
+        }
+        
+        // 否则构建逗号分隔的字符串
         string pathlists = "";
         for (int i = 0; i < _blackSceneNames.Count; i++)
         {
