@@ -176,7 +176,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
     
     private void InitializeMaterialList()
     {
-        string[] paths = ShaderVariantCollectorSetting.GeBlackPath(_currentPackageName);
+        List<string> paths = ShaderVariantCollectorSetting.GeBlackPath(_currentPackageName);
         _blackSceneNames = new List<string>();
         
         // 遍历初始化数据，添加项目到列表
@@ -189,7 +189,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
 
     private void InitializeGlobalKeywords()
     {
-        string[] keywords = ShaderVariantCollectorSetting.GetGlobalKeywords(_currentPackageName);
+        List<string> keywords = ShaderVariantCollectorSetting.GetGlobalKeywords(_currentPackageName);
         _globalKeywords = new List<string>();
         
         foreach (string keyword in keywords)
@@ -211,7 +211,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
 
     private void InitializeFilterShaderNames()
     {
-        string[] shaderNames = ShaderVariantCollectorSetting.GetFilterShaderNames(_currentPackageName);
+        List<string> shaderNames = ShaderVariantCollectorSetting.GetFilterShaderNames(_currentPackageName);
         _filterShaderNames = new List<string>();
         
         foreach (string shaderName in shaderNames)
@@ -245,7 +245,23 @@ public class ShaderVariantCollectorWindow : EditorWindow
 
     private void OnAddGlobalKeyword()
     {
-        AddGlobalKeywordItem("");
+        // 检查是否已经存在空的关键字输入框
+        bool hasEmptyKeywordField = false;
+        foreach (var child in globalKeywordsContainer.Children())
+        {
+            var textField = child.Q<TextField>();
+            if (textField != null && string.IsNullOrEmpty(textField.value))
+            {
+                hasEmptyKeywordField = true;
+                break;
+            }
+        }
+        
+        // 只有在没有空的关键字输入框时才添加新的
+        if (!hasEmptyKeywordField)
+        {
+            AddGlobalKeywordItem("");
+        }
     }
     
     private void AddGlobalKeywordItem(string keyword)
@@ -420,7 +436,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
         }
         
         // 保存到设置中
-        ShaderVariantCollectorSetting.SetGlobalKeywords(_currentPackageName, _globalKeywords.ToArray());
+        ShaderVariantCollectorSetting.SetGlobalKeywords(_currentPackageName, _globalKeywords);
     }
 
     private void SetLocalKeyword(string shaderName, string keyword, bool isAdd = true)
@@ -488,7 +504,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
         string savePath = ShaderVariantCollectorSetting.GeFileSavePath(_currentPackageName);
         string searchPath = ShaderVariantCollectorSetting.GeFileSearchPath(_currentPackageName);
         string searchScenePath = ShaderVariantCollectorSetting.GeSecneSearchPath(_currentPackageName);
-        string[] blackPaths = ShaderVariantCollectorSetting.GeBlackPath(_currentPackageName);
+        List<string> blackPaths = ShaderVariantCollectorSetting.GeBlackPath(_currentPackageName);
         string[] filterShaderName = _filterShaderNames.ToArray();
         bool splitByShaderName = ShaderVariantCollectorSetting.GetSplitByShaderName(_currentPackageName);
         int processCapacity = _processCapacitySlider.value;

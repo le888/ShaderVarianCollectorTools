@@ -39,10 +39,10 @@ public static class ShaderVariantCollector
     private static string _savePath;
     private static string _searchPath;
     private static string _scenePath;
-    private static string[] _blackPath;
+    private static List<string> _blackPath;
     private static bool _splitByShaderName;
     private static bool _collectSceneVariants;
-    private static string[] _globalKeywords;
+    private static List<string> _globalKeywords;
     private static LocalKeywordCollection _localKeywords;
     public static HashSet<string> _filterShaderName;
     private static int _processMaxNum;
@@ -63,7 +63,7 @@ public static class ShaderVariantCollector
     /// <summary>
     /// 开始收集
     /// </summary>
-    public static void Run(string savePath, string searchPath, string scenePath, string[] blackPath, string[] filterShaderName, int processMaxNum, bool splitByShaderName, Action completedCallback)
+    public static void Run(string savePath, string searchPath, string scenePath, List<string> blackPath, string[] filterShaderName, int processMaxNum, bool splitByShaderName, Action completedCallback)
     {
         if (_steps != ESteps.None)
             return;
@@ -158,7 +158,7 @@ public static class ShaderVariantCollector
             if (_allMaterials.Count > 0)
             {
                 _elapsedTime = Stopwatch.StartNew();
-                if (_globalKeywords.Length <= 0)
+                if (_globalKeywords.Count <= 0)
                 {
                     _steps = ESteps.CollectSleeping;    
                 }
@@ -183,7 +183,7 @@ public static class ShaderVariantCollector
         if (_steps == ESteps.ApplyGlobalKeywords)
         {
             _elapsedTime = Stopwatch.StartNew();
-            if (_currentKeywordIndex >= _globalKeywords.Length)
+            if (_currentKeywordIndex >= _globalKeywords.Count)
             {
                 // 确保在完成所有全局关键字处理后，重置所有关键字状态
                 foreach (var keyword in _globalKeywords)
@@ -215,7 +215,7 @@ public static class ShaderVariantCollector
             {
                 _elapsedTime.Stop();
                 // 在应用下一个关键字之前，重新创建材质球体
-                if (_currentKeywordIndex < _globalKeywords.Length)
+                if (_currentKeywordIndex < _globalKeywords.Count)
                 {
                     DestroyAllSpheres();
                     OnlyCreate(_rangeMt);
@@ -423,14 +423,13 @@ public static class ShaderVariantCollector
 
     private static bool IsBlack(string path)
     {
-        if (_blackPath == null)
+        if (_blackPath == null || _blackPath.Count == 0)
         {
             return false;
         }
 
-        for (int i = 0; i < _blackPath.Length; i++)
+        foreach (string black in _blackPath)
         {
-            string black = _blackPath[i];
             if (black != "" && path.Contains(black))
             {
                 return true;
@@ -494,7 +493,7 @@ public static class ShaderVariantCollector
         OnlyCreate(materials);
 
         // 如果有全局关键字，开始逐个应用
-        if (_globalKeywords != null && _globalKeywords.Length > 0)
+        if (_globalKeywords != null && _globalKeywords.Count > 0)
         {
             _elapsedTime = Stopwatch.StartNew();
             _currentKeywordIndex = 0;
