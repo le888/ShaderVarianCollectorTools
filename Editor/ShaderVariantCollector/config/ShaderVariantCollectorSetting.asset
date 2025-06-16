@@ -15,7 +15,7 @@ MonoBehaviour:
   fileName: MyShaderVariants.shadervariants
   fileSavePath: Assets/Scenes/vs
   processCapacity: 1000
-  fileSearchPath: Assets/BlendAdd
+  fileSearchPath: Assets
   sceneSearchPath: Assets
   blackPaths: []
   splitByShaderName: 1

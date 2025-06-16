@@ -11,6 +11,7 @@ using UnityEditor.EditorTools;
 using UnityEditor.SceneManagement;
 using UnityEngine.SceneManagement;
 using Debug = UnityEngine.Debug;
+using Object = UnityEngine.Object;
 
 public static class ShaderVariantCollector
 {
@@ -696,6 +697,7 @@ public static class ShaderVariantCollector
 
             if (_splitByShaderName)
             {
+                List<string> shaderNamesSave = new List<string>();
                 string basePath = Path.GetDirectoryName(_savePath);
                 string baseName = Path.GetFileNameWithoutExtension(_savePath);
                 
@@ -706,6 +708,8 @@ public static class ShaderVariantCollector
                     shaderName = shaderName.Replace('/', '_').Replace('\\', '_');
                     // 直接使用shader名称作为文件名，不包含原始文件名
                     string shaderSavePath = Path.Combine(basePath, $"{shaderName}.shadervariants");
+                    //添加保存的shader名称
+                    shaderNamesSave.Add(shaderName);
                     
                     // 创建新的ShaderVariantCollection
                     ShaderVariantCollection shaderSvc = new ShaderVariantCollection();
@@ -723,7 +727,11 @@ public static class ShaderVariantCollector
                     // 保存shader变体集
                     AssetDatabase.CreateAsset(shaderSvc, shaderSavePath);
                 }
-                
+
+                //保存shader名称为txt文件，每个shader名称一行
+                string shaderNamesPath = Path.Combine(basePath, $"{baseName}_shaderNames.txt");
+                File.WriteAllLines(shaderNamesPath, shaderNamesSave);
+
                 // 如果选择了拆分保存，删除完整的变体集文件
                 AssetDatabase.DeleteAsset(_savePath);
                 AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
@@ -733,6 +741,7 @@ public static class ShaderVariantCollector
         AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
     }
     
+
     public static HashSet<string> GetAlwaysIncludedShaderNames()
     {
         HashSet<string> shaderNames = new HashSet<string>();
