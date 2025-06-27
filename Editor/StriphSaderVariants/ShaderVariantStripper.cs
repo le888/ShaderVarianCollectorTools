@@ -9,7 +9,8 @@ using System.Collections.Generic;
 public class ShaderVariantStripper : IPreprocessShaders
 {
     // 修改为你的 ShaderVariantCollection 文件夹路径（相对于 Assets）
-    private const string VariantCollectionFolder = "Assets/Scenes/vs";
+    // private const string VariantCollectionFolder = "Assets/Scenes/vs";
+    private const string VariantCollectionFolder = "Assets/ResourcesAB/Config/ShaderVarians";
 
     private static HashSet<string> validVariants = new HashSet<string>();
     private static HashSet<string> needHandleNames = new HashSet<string>();
@@ -39,6 +40,12 @@ public class ShaderVariantStripper : IPreprocessShaders
 
         for (int i = data.Count - 1; i >= 0; i--)
         {
+            if (SkipSpecial(shader.name, snippet, data[i]))
+            {
+                Debug.Log("[SkipSpecial 保留]"+GenerateVariantKey(shader.name, snippet, data[i]));
+                continue;    
+            }
+            
             string key = GenerateVariantKey(shader.name, snippet, data[i]);
             if (!validVariants.Contains(key))
             {
@@ -56,6 +63,29 @@ public class ShaderVariantStripper : IPreprocessShaders
         {
             Debug.Log($"[剔除] Shader: {shader.name}, Snippet: {snippet.passName}，剔除 {removedCount} / {originalCount}");
         }
+    }
+
+    private bool SkipSpecial(string shaderName, ShaderSnippetData snippet, ShaderCompilerData data)
+    {
+        var keys = data.shaderKeywordSet.GetShaderKeywords();
+        foreach (var key in keys)
+        {
+            if (key.name == "_ADDITIONAL_LIGHT_SHADOWS")
+            {
+                return false;
+            }
+
+            if (key.name == "_ADDITIONAL_LIGHTS")
+            {
+                return true;
+            }
+            
+            if (key.name == "LIGHTMAP_ON")
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
 
@@ -126,7 +156,8 @@ public class ShaderVariantStripper : IPreprocessShaders
     {
         List<string> keywordList = new List<string>(keywords);
         keywordList.Sort(); // 排序保证一致性
-        return $"{shaderName}|{passName}|{string.Join("+", keywordList)}";
+        // return $"{shaderName}|{passName}|{string.Join("+", keywordList)}";
+        return $"{shaderName}|{string.Join("+", keywordList)}";
     }
 
     private static string GenerateVariantKey(string shaderName, ShaderSnippetData snippet, ShaderCompilerData data)
@@ -144,7 +175,8 @@ public class ShaderVariantStripper : IPreprocessShaders
 
         keywordList.Sort(); // 保证顺序一致
 
-        return $"{shaderName}|{passType}|{string.Join("+", keywordList)}";
+        // return $"{shaderName}|{passType}|{string.Join("+", keywordList)}";
+        return $"{shaderName}|{string.Join("+", keywordList)}";
     }
     // We no longer need the GenerateVariantKey methods since we're using ShaderVariantCollection.Contains directly
 }
