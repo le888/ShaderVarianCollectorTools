@@ -701,6 +701,17 @@ public static class ShaderVariantCollector
                 string basePath = Path.GetDirectoryName(_savePath);
                 string baseName = Path.GetFileNameWithoutExtension(_savePath);
                 
+                // 在保存之前删除目标路径下的所有.shadervariants文件
+                if (Directory.Exists(basePath))
+                {
+                    string[] existingFiles = Directory.GetFiles(basePath, "*.shadervariants");
+                    foreach (string filePath in existingFiles)
+                    {
+                        string relativePath = "Assets" + filePath.Substring(Application.dataPath.Length).Replace('\\', '/');
+                        AssetDatabase.DeleteAsset(relativePath);
+                    }
+                }
+                
                 foreach (var shaderInfo in wrapper.ShaderVariantInfos)
                 {
                     string shaderName = shaderInfo.ShaderName;
