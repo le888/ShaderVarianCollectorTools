@@ -19,7 +19,7 @@ MonoBehaviour:
   sceneSearchPath: Assets
   blackPaths: []
   splitByShaderName: 1
-  collectSceneVariants: 1
+  collectSceneVariants: 0
   saveJsonFile: 0
   globalKeywords:
   - _TEST_VVV
