@@ -221,15 +221,9 @@ public static class ShaderVariantCollector
                 }
                 if (excluded) continue;
 
-                // 保留组中所有 shader 支持的关键字（包括材质未启用的，用于预热）
-                var filtered = new HashSet<string>();
-                foreach (string kw in group)
-                {
-                    if (shaderGlobalKeywords.Contains(kw))
-                        filtered.Add(kw);
-                }
-                if (filtered.Count > 1)
-                    processGroups.Add(filtered);
+                // 保留组中所有关键字（包括材质未启用的，用于预热）
+                if (group.Count > 1)
+                    processGroups.Add(new HashSet<string>(group));
             }
 
             // 收集不在 multi_compile 组中的关键字（shader_feature 等）
