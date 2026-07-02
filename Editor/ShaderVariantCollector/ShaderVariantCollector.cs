@@ -588,6 +588,16 @@ public static class ShaderVariantCollector
         if (svc != null)
         {
             var wrapper = ShaderVariantCollectionManifest.Extract(svc);
+
+            // Debug 模式：保存原始渲染收集的变体文件
+            bool debugRaw = ShaderVariantCollectorSetting.GetSaveDebugRawSVC(_currentPackageName);
+            if (debugRaw)
+            {
+                string debugPath = _savePath.Replace(".shadervariants", "_RAW.shadervariants");
+                AssetDatabase.CopyAsset(_savePath, debugPath);
+                Debug.Log($"[Debug] 原始渲染变体已保存: {debugPath}");
+            }
+
             int beforePermutation = 0;
             foreach (var info in wrapper.ShaderVariantInfos) beforePermutation += info.ShaderVariantElements.Count;
             Debug.Log($"[变种统计] 排列组合前: {wrapper.ShaderVariantInfos.Count} shader, {beforePermutation} 变种");

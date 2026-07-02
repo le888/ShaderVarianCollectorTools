@@ -51,6 +51,7 @@ public class ShaderVariantCollectorSetting : ScriptableObject
     public LocalKeywordCollection localKeywordsCollection = new LocalKeywordCollection();
     public List<string> filterShaderNames = new List<string>();
     public int maxVariantsPerFile = 5;
+    public bool saveDebugRawSVC = false;
 
     // Get/Set 方法
     public static string GetFileName(string packageName)
@@ -228,6 +229,18 @@ public class ShaderVariantCollectorSetting : ScriptableObject
     {
         ShaderVariantCollectorSetting settings = GetSettings();
         settings.maxVariantsPerFile = value;
+        SaveSettings(settings);
+    }
+
+    public static bool GetSaveDebugRawSVC(string packageName)
+    {
+        return GetSettings().saveDebugRawSVC;
+    }
+
+    public static void SetSaveDebugRawSVC(string packageName, bool value)
+    {
+        ShaderVariantCollectorSetting settings = GetSettings();
+        settings.saveDebugRawSVC = value;
         SaveSettings(settings);
     }
 }

@@ -37,6 +37,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
     private bool? _pendingCollectScene;
     private bool? _pendingSaveJson;
     private int _pendingMaxVariantsPerFile = -1;
+    private bool? _pendingSaveDebugRawSVC;
     private int _pendingRemoveBlackIndex = -1;
     private int _pendingRemoveFilterIndex = -1;
     private int _pendingRemoveLocalIndex = -1;
@@ -58,6 +59,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
         _pendingCollectScene = null;
         _pendingSaveJson = null;
         _pendingMaxVariantsPerFile = -1;
+        _pendingSaveDebugRawSVC = null;
         _pendingRemoveBlackIndex = -1;
         _pendingRemoveFilterIndex = -1;
         _pendingRemoveLocalIndex = -1;
@@ -125,6 +127,11 @@ public class ShaderVariantCollectorWindow : EditorWindow
         if (newSaveJson != saveJson)
             _pendingSaveJson = newSaveJson;
 
+        bool debugRaw = ShaderVariantCollectorSetting.GetSaveDebugRawSVC(_currentPackageName);
+        bool newDebugRaw = EditorGUILayout.Toggle("Debug: 保存原始渲染变体", debugRaw);
+        if (newDebugRaw != debugRaw)
+            _pendingSaveDebugRawSVC = newDebugRaw;
+
         EditorGUILayout.Space(10);
 
         GUI.backgroundColor = new Color(0.24f, 0.65f, 0.25f);
@@ -161,6 +168,8 @@ public class ShaderVariantCollectorWindow : EditorWindow
             ShaderVariantCollectorSetting.SetSaveJsonFile(_currentPackageName, _pendingSaveJson.Value);
         if (_pendingMaxVariantsPerFile >= 0)
             ShaderVariantCollectorSetting.SetMaxVariantsPerFile(_currentPackageName, _pendingMaxVariantsPerFile);
+        if (_pendingSaveDebugRawSVC.HasValue)
+            ShaderVariantCollectorSetting.SetSaveDebugRawSVC(_currentPackageName, _pendingSaveDebugRawSVC.Value);
 
         // 列表删除
         if (_pendingRemoveBlackIndex >= 0)
