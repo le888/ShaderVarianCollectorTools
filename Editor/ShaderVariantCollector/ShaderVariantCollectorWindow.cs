@@ -69,7 +69,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
 
         // 变体集名字
         string fileName = ShaderVariantCollectorSetting.GetFileName(_currentPackageName);
-        string newFileName = EditorGUILayout.TextField("变体集名字", fileName);
+        string newFileName = EditorGUILayout.DelayedTextField("变体集名字", fileName);
         if (newFileName != fileName)
             _pendingFileName = newFileName;
 
@@ -242,7 +242,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
         EditorGUILayout.BeginHorizontal();
         try
         {
-            result = EditorGUILayout.TextField(label, currentPath);
+            result = EditorGUILayout.DelayedTextField(label, currentPath);
             if (GUILayout.Button("选择", GUILayout.Width(60)))
             {
                 string selected = EditorUtility.OpenFolderPanel("选择文件夹", "Assets", "");
@@ -256,7 +256,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
         {
             EditorGUILayout.EndHorizontal();
         }
-        return result;
+        return result != currentPath ? result : null;
     }
 
     private void DrawBlacklist()
