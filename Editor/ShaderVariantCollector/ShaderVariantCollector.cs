@@ -1458,8 +1458,8 @@ public static class ShaderVariantCollector
             string source = File.ReadAllText(shaderPath);
             var lines = source.Split('\n');
             int braceDepth = 0;
-            bool inPass = false;
-            int passBraceStart = -1;
+            int passDepth = -1;
+            string currentLightMode = null;
 
             foreach (string line in lines)
             {
@@ -1467,8 +1467,8 @@ public static class ShaderVariantCollector
 
                 if (trimmed == "Pass" || trimmed == "Pass {")
                 {
-                    inPass = true;
-                    passBraceStart = -1;
+                    passDepth = -2;
+                    currentLightMode = null;
                 }
 
                 foreach (char c in line)
@@ -1476,27 +1476,27 @@ public static class ShaderVariantCollector
                     if (c == '{')
                     {
                         braceDepth++;
-                        if (inPass && passBraceStart < 0)
-                            passBraceStart = braceDepth;
+                        if (passDepth == -2)
+                            passDepth = braceDepth;
                     }
                     else if (c == '}')
                     {
                         braceDepth--;
-                        if (inPass && passBraceStart >= 0 && braceDepth < passBraceStart)
+                        if (passDepth >= 0 && braceDepth < passDepth)
                         {
-                            inPass = false;
+                            if (currentLightMode != null)
+                                passTypes.Add(LightModeToPassType(currentLightMode));
+                            passDepth = -1;
+                            currentLightMode = null;
                         }
                     }
                 }
 
-                if (inPass && trimmed.StartsWith("LightMode"))
+                if (passDepth >= 0 && trimmed.StartsWith("LightMode"))
                 {
                     int eqIdx = trimmed.IndexOf('=');
                     if (eqIdx >= 0)
-                    {
-                        string value = trimmed.Substring(eqIdx + 1).Trim().Trim('"');
-                        passTypes.Add(LightModeToPassType(value));
-                    }
+                        currentLightMode = trimmed.Substring(eqIdx + 1).Trim().Trim('"');
                 }
             }
         }
