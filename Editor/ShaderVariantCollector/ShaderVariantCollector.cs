@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.IO;
-using Sirenix.Utilities;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEditor;
@@ -674,7 +673,7 @@ public static class ShaderVariantCollector
             // 获取Always Included Shaders列表
             var alwaysIncludedShaderNames = GetAlwaysIncludedShaderNames();
             var hideShader = GetURPHiddenShaderNames();
-            alwaysIncludedShaderNames.AddRange(hideShader);
+            alwaysIncludedShaderNames.UnionWith(hideShader);
             // 过滤掉Always Included Shaders
             wrapper.ShaderVariantInfos.RemoveAll(info => alwaysIncludedShaderNames.Contains(info.ShaderName));
             //过滤掉 shader 路径包含 Resources
