@@ -22,9 +22,7 @@ MonoBehaviour:
   collectSceneVariants: 0
   saveJsonFile: 0
   globalKeywords:
-  - _TEST_VVV
-  - _TEST_VVV2
-  - _TEST_VVV _TEST_VVV2
+  - _MAIN_LIGHT_SHADOWS_CASCADE
   localKeywordsCollection:
     LocalKeywords:
     - ShaderName: Custom/BlendAddEffect
