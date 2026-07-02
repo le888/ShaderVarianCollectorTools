@@ -37,9 +37,11 @@ public static class ShaderVariantCollector
         CollectGlobalKeywordsClearSleeping,
     }
 
-    private const float WaitMilliseconds = 2000f;
+    private const float WaitMilliseconds = 1000f;
     private const float SleepMilliseconds = 5000f;
-    private const float SleepSceneMilliseconds = 10000f;
+    private const float SleepSceneMilliseconds = 5000f;
+    private const float StableCheckInterval = 500f; // 每 500ms 检测一次 SVC 是否稳定
+    private const float MinSleepMilliseconds = 500f; // 最少等待 500ms
 
     private static string _savePath;
     private static string _searchPath;
@@ -61,6 +63,9 @@ public static class ShaderVariantCollector
     private static List<GameObject> _allSpheres = new List<GameObject>(1000);
     private static int _currentKeywordIndex = 0;
     private static HashSet<Shader> _processedShaders = new HashSet<Shader>();
+    private static int _lastShaderCount = 0;
+    private static int _lastVariantCount = 0;
+    private static float _stableSince = 0f;
     
     private static List<string> _allScene;
     private static Scene _currentScene;
@@ -100,6 +105,9 @@ public static class ShaderVariantCollector
         _currentKeywordIndex = 0;
         _processedShaders.Clear();
         _allSpheres.Clear();
+        _lastShaderCount = 0;
+        _lastVariantCount = 0;
+        _stableSince = 0f;
 
         // 聚焦到游戏窗口
         EditorTools.FocusUnityGameWindow();
@@ -162,6 +170,11 @@ public static class ShaderVariantCollector
             _allMaterials.RemoveRange(0, count);
             CollectVariants(_rangeMt);
 
+            // 重置 SVC 稳定检测状态
+            _lastShaderCount = ShaderVariantCollectionHelper.GetCurrentShaderVariantCollectionShaderCount();
+            _lastVariantCount = ShaderVariantCollectionHelper.GetCurrentShaderVariantCollectionVariantCount();
+            _stableSince = 0f;
+
             if (_allMaterials.Count > 0)
             {
                 _elapsedTime = Stopwatch.StartNew();
@@ -176,7 +189,7 @@ public static class ShaderVariantCollector
 
         if (_steps == ESteps.CollectWaitToScene)
         {
-            if (_elapsedTime.ElapsedMilliseconds > SleepMilliseconds)
+            if (IsSVCStable())
             {
                 DestroyAllSpheres();
                 _elapsedTime.Stop();
@@ -186,7 +199,7 @@ public static class ShaderVariantCollector
 
         if (_steps == ESteps.CollectSleeping)
         {
-            if (_elapsedTime.ElapsedMilliseconds > SleepMilliseconds)
+            if (IsSVCStable())
             {
                 DestroyAllSpheres();
                 _elapsedTime.Stop();
@@ -548,6 +561,41 @@ public static class ShaderVariantCollector
         // }
         
         return go;
+    }
+
+    /// <summary>
+    /// 检测 SVC 是否已稳定（数量不再变化）
+    /// 最少等待 MinSleepMilliseconds，之后每 StableCheckInterval 检查一次
+    /// </summary>
+    private static bool IsSVCStable()
+    {
+        float elapsed = _elapsedTime.ElapsedMilliseconds;
+
+        // 超时强制通过
+        if (elapsed > SleepMilliseconds)
+            return true;
+
+        // 最少等待
+        if (elapsed < MinSleepMilliseconds)
+            return false;
+
+        int currentShader = ShaderVariantCollectionHelper.GetCurrentShaderVariantCollectionShaderCount();
+        int currentVariant = ShaderVariantCollectionHelper.GetCurrentShaderVariantCollectionVariantCount();
+
+        if (currentShader != _lastShaderCount || currentVariant != _lastVariantCount)
+        {
+            // 数量还在变化，重置稳定计时
+            _lastShaderCount = currentShader;
+            _lastVariantCount = currentVariant;
+            _stableSince = elapsed;
+            return false;
+        }
+
+        // 数量没变，检查是否已稳定超过 StableCheckInterval
+        if (elapsed - _stableSince >= StableCheckInterval)
+            return true;
+
+        return false;
     }
 
     private static void DestroyAllSpheres()
