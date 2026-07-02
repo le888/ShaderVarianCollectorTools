@@ -194,7 +194,7 @@ public static class ShaderVariantCollector
             string shaderPath = AssetDatabase.GetAssetPath(shader);
 
             // 获取 shader 的实际 passType 列表
-            var shaderPassTypes = GetShaderPassTypes(shaderPath);
+            var shaderPassTypes = GetShaderPassTypesDebug(shaderPath, debugLog);
             debugLog.AppendLine($"  [passType] {shader.name}: shaderPath={shaderPath}, passTypes=[{string.Join(", ", shaderPassTypes)}]");
             if (shaderPassTypes.Count == 0)
             {
@@ -1450,13 +1450,27 @@ public static class ShaderVariantCollector
     /// </summary>
     private static List<PassType> GetShaderPassTypes(string shaderPath)
     {
+        return GetShaderPassTypesDebug(shaderPath, null);
+    }
+
+    private static List<PassType> GetShaderPassTypesDebug(string shaderPath, System.Text.StringBuilder debugLog)
+    {
         var passTypes = new List<PassType>();
-        if (string.IsNullOrEmpty(shaderPath) || !File.Exists(shaderPath))
+        if (string.IsNullOrEmpty(shaderPath))
+        {
+            debugLog?.AppendLine($"    [pass解析] shaderPath 为空");
             return passTypes;
+        }
+        if (!File.Exists(shaderPath))
+        {
+            debugLog?.AppendLine($"    [pass解析] 文件不存在: {shaderPath}");
+            return passTypes;
+        }
 
         try
         {
             string source = File.ReadAllText(shaderPath);
+            debugLog?.AppendLine($"    [pass解析] 读取文件成功, 长度={source.Length}");
             var lines = source.Split('\n');
             int braceDepth = 0;
             bool waitingPassBrace = false;
@@ -1469,21 +1483,17 @@ public static class ShaderVariantCollector
                 lineNum++;
                 string trimmed = line.Trim();
 
-                // 跳过注释
                 if (trimmed.StartsWith("//"))
-                {
-                    // 但仍然需要追踪花括号（注释中一般没有，但保险起见）
                     continue;
-                }
 
                 if (trimmed == "Pass" || trimmed == "Pass {")
                 {
                     waitingPassBrace = true;
                     passStartDepth = -1;
                     currentLightMode = null;
+                    debugLog?.AppendLine($"    [pass解析] 行{lineNum}: 发现 Pass");
                 }
 
-                // 逐字符追踪花括号
                 foreach (char c in line)
                 {
                     if (c == '{')
@@ -1493,17 +1503,21 @@ public static class ShaderVariantCollector
                         {
                             passStartDepth = braceDepth;
                             waitingPassBrace = false;
+                            debugLog?.AppendLine($"    [pass解析] 行{lineNum}: pass 块开始, depth={passStartDepth}");
                         }
                     }
                     else if (c == '}')
                     {
                         if (passStartDepth >= 0 && braceDepth == passStartDepth)
                         {
-                            // pass 块关闭
                             if (currentLightMode != null)
                             {
                                 passTypes.Add(LightModeToPassType(currentLightMode));
-                                Debug.Log($"[GetShaderPassTypes] 发现 pass: LightMode={currentLightMode}, passType={LightModeToPassType(currentLightMode)}");
+                                debugLog?.AppendLine($"    [pass解析] 行{lineNum}: pass 块结束, LightMode={currentLightMode}, passType={LightModeToPassType(currentLightMode)}");
+                            }
+                            else
+                            {
+                                debugLog?.AppendLine($"    [pass解析] 行{lineNum}: pass 块结束, 无 LightMode");
                             }
                             passStartDepth = -1;
                             currentLightMode = null;
@@ -1512,20 +1526,20 @@ public static class ShaderVariantCollector
                     }
                 }
 
-                // 在 pass 块内收集 LightMode
                 if (passStartDepth >= 0 && trimmed.StartsWith("LightMode"))
                 {
                     int eqIdx = trimmed.IndexOf('=');
                     if (eqIdx >= 0)
                         currentLightMode = trimmed.Substring(eqIdx + 1).Trim().Trim('"');
+                    debugLog?.AppendLine($"    [pass解析] 行{lineNum}: LightMode={currentLightMode}");
                 }
             }
 
-            Debug.Log($"[GetShaderPassTypes] {shaderPath}: 找到 {passTypes.Count} 个 pass");
+            debugLog?.AppendLine($"    [pass解析] 完成: {passTypes.Count} 个 pass");
         }
         catch (Exception e)
         {
-            Debug.LogWarning($"[分析模式] 解析 passType 失败: {shaderPath}, {e.Message}");
+            debugLog?.AppendLine($"    [pass解析] 异常: {e.Message}");
         }
 
         return passTypes;
