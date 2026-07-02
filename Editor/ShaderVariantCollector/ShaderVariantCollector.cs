@@ -593,8 +593,12 @@ public static class ShaderVariantCollector
             bool debugRaw = ShaderVariantCollectorSetting.GetSaveDebugRawSVC(_currentPackageName);
             if (debugRaw)
             {
-                string debugPath = _savePath.Replace(".shadervariants", "_RAW.shadervariants");
+                string basePath = Path.GetDirectoryName(_savePath);
+                string debugDir = Path.Combine(basePath, "debug");
+                EditorTools.CreateDirectory(debugDir);
+                string debugPath = Path.Combine(debugDir, Path.GetFileName(_savePath).Replace(".shadervariants", "_RAW.shadervariants"));
                 AssetDatabase.CopyAsset(_savePath, debugPath);
+                AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
                 Debug.Log($"[Debug] 原始渲染变体已保存: {debugPath}");
             }
 
