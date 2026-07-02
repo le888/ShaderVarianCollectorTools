@@ -21,17 +21,11 @@ MonoBehaviour:
   splitByShaderName: 1
   collectSceneVariants: 0
   saveJsonFile: 0
-  globalKeywords:
-  - _MAIN_LIGHT_SHADOWS_CASCADE
-  - _MAIN_LIGHT_SHADOWS
-  - _RAIN
-  - _WEATHER_SNOW
-  - _RO_LIGHTMAP_ON
+  globalKeywords: []
   localKeywordsCollection:
     LocalKeywords:
-    - ShaderName: Custom/BlendAddEffect
-      Keyword: _BBBC
-    - ShaderName: Custom/BlendAddEffect
-      Keyword: _XXXY
+    - ShaderName: RO/PBRLit
+      Keyword: _ALPHATEST_ON
   filterShaderNames:
-  - TestDecal
+  - Universal Render Pipeline/Lit
+  maxVariantsPerFile: 0
