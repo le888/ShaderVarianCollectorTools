@@ -193,6 +193,14 @@ public static class ShaderVariantCollector
             var materialKeywords = kvp.Value;
             string shaderPath = AssetDatabase.GetAssetPath(shader);
 
+            // 获取 shader 的实际 passType 列表
+            var shaderPassTypes = GetShaderPassTypes(shaderPath);
+            if (shaderPassTypes.Count == 0)
+            {
+                debugLog.AppendLine($"  [跳过] {shader.name}: 无法获取 passType");
+                continue;
+            }
+
             // 收集该 shader 所有材质中启用的关键字
             var allEnabledKeywords = new HashSet<string>();
             foreach (var kwSet in materialKeywords)
@@ -250,12 +258,15 @@ public static class ShaderVariantCollector
             var baseKeywords = new List<string>(nonGroupKeywords);
             baseKeywords.Sort();
 
+            // 使用 shader 的实际 passType
+            PassType mainPassType = shaderPassTypes[0];
+
             if (combinations.Count == 0)
             {
                 // 没有 multi_compile 组，只用基础关键字
                 shaderInfo.ShaderVariantElements.Add(new ShaderVariantCollectionManifest.ShaderVariantElement
                 {
-                    PassType = PassType.ForwardBase,
+                    PassType = mainPassType,
                     Keywords = baseKeywords.ToArray()
                 });
             }
@@ -275,7 +286,7 @@ public static class ShaderVariantCollector
 
                     shaderInfo.ShaderVariantElements.Add(new ShaderVariantCollectionManifest.ShaderVariantElement
                     {
-                        PassType = PassType.ForwardBase,
+                        PassType = mainPassType,
                         Keywords = finalKeywords.ToArray()
                     });
                 }
@@ -307,39 +318,38 @@ public static class ShaderVariantCollector
         // 应用 multi_compile 排列组合（补充材质未启用的默认状态）
         AddGlobalKeywordVariantsToManifest(wrapper, excludeKeywords.ToList());
 
-        // 写入文件
+        // 写入文件（用真实 passType 验证后写入）
         int totalVariants = 0;
-        foreach (var info in wrapper.ShaderVariantInfos)
+
+        if (splitByShaderName)
         {
-            Shader shader = AssetDatabase.LoadAssetAtPath<Shader>(info.AssetPath);
-            if (shader == null) { debugLog.AppendLine($"  [跳过] shader 未找到: {info.AssetPath}"); continue; }
-
-            var variants = new List<ShaderVariantCollection.ShaderVariant>();
-            foreach (var v in info.ShaderVariantElements)
+            foreach (var info in wrapper.ShaderVariantInfos)
             {
-                try
-                {
-                    variants.Add(new ShaderVariantCollection.ShaderVariant(shader, v.PassType, v.Keywords));
-                }
-                catch (ArgumentException ex)
-                {
-                    debugLog.AppendLine($"  [验证失败] {info.ShaderName} pass={v.PassType} kw=[{string.Join(", ", v.Keywords)}] → {ex.Message}");
-                }
-            }
-            debugLog.AppendLine($"  [写入] {info.ShaderName}: {info.ShaderVariantElements.Count} 个变种, 有效 {variants.Count} 个");
+                Shader shader = AssetDatabase.LoadAssetAtPath<Shader>(info.AssetPath);
+                if (shader == null) { debugLog.AppendLine($"  [跳过] shader 未找到: {info.AssetPath}"); continue; }
 
-            if (splitByShaderName)
-            {
+                var variants = new List<ShaderVariantCollection.ShaderVariant>();
+                foreach (var v in info.ShaderVariantElements)
+                {
+                    try
+                    {
+                        variants.Add(new ShaderVariantCollection.ShaderVariant(shader, v.PassType, v.Keywords));
+                    }
+                    catch (ArgumentException ex)
+                    {
+                        debugLog.AppendLine($"  [验证失败] {info.ShaderName} pass={v.PassType} kw=[{string.Join(", ", v.Keywords)}] → {ex.Message}");
+                    }
+                }
+                debugLog.AppendLine($"  [写入] {info.ShaderName}: {info.ShaderVariantElements.Count} 个变种, 有效 {variants.Count} 个");
+
                 string basePath = Path.GetDirectoryName(savePath);
                 string shaderName = info.ShaderName.Replace('/', '_').Replace('\\', '_');
                 string shaderSavePath = Path.Combine(basePath, $"{shaderName}.shadervariants");
                 WriteShaderVariantFile(shaderSavePath, shader, variants);
+                totalVariants += variants.Count;
             }
-            totalVariants += variants.Count;
         }
-
-        // 如果不拆分，合并所有变种写入单个文件
-        if (!splitByShaderName)
+        else
         {
             var allVariants = new List<ShaderVariantCollection.ShaderVariant>();
             foreach (var info in wrapper.ShaderVariantInfos)
@@ -349,15 +359,20 @@ public static class ShaderVariantCollector
                 foreach (var v in info.ShaderVariantElements)
                 {
                     try { allVariants.Add(new ShaderVariantCollection.ShaderVariant(shader, v.PassType, v.Keywords)); }
-                    catch { }
+                    catch (ArgumentException ex)
+                    {
+                        debugLog.AppendLine($"  [验证失败] {info.ShaderName} pass={v.PassType} kw=[{string.Join(", ", v.Keywords)}] → {ex.Message}");
+                    }
                 }
             }
-            // 用第一个 shader 写入（合并文件用任意 shader 引用即可）
+            debugLog.AppendLine($"  [写入] 合并: {allVariants.Count} 个有效变种 → {savePath}");
+
             if (allVariants.Count > 0)
             {
                 Shader firstShader = AssetDatabase.LoadAssetAtPath<Shader>(wrapper.ShaderVariantInfos[0].AssetPath);
                 WriteShaderVariantFile(savePath, firstShader, allVariants);
             }
+            totalVariants = allVariants.Count;
         }
 
         // 保存 debug 日志
@@ -1427,6 +1442,70 @@ public static class ShaderVariantCollector
                 groups.Add(keywords);
         }
         return groups;
+    }
+
+    /// <summary>
+    /// 从 shader 源码获取所有 pass 的 passType 列表
+    /// </summary>
+    private static List<PassType> GetShaderPassTypes(string shaderPath)
+    {
+        var passTypes = new List<PassType>();
+        if (string.IsNullOrEmpty(shaderPath) || !File.Exists(shaderPath))
+            return passTypes;
+
+        try
+        {
+            string source = File.ReadAllText(shaderPath);
+            var lines = source.Split('\n');
+            int braceDepth = 0;
+            bool inPass = false;
+            int passBraceStart = -1;
+
+            foreach (string line in lines)
+            {
+                string trimmed = line.Trim();
+
+                if (trimmed == "Pass" || trimmed == "Pass {")
+                {
+                    inPass = true;
+                    passBraceStart = -1;
+                }
+
+                foreach (char c in line)
+                {
+                    if (c == '{')
+                    {
+                        braceDepth++;
+                        if (inPass && passBraceStart < 0)
+                            passBraceStart = braceDepth;
+                    }
+                    else if (c == '}')
+                    {
+                        braceDepth--;
+                        if (inPass && passBraceStart >= 0 && braceDepth < passBraceStart)
+                        {
+                            inPass = false;
+                        }
+                    }
+                }
+
+                if (inPass && trimmed.StartsWith("LightMode"))
+                {
+                    int eqIdx = trimmed.IndexOf('=');
+                    if (eqIdx >= 0)
+                    {
+                        string value = trimmed.Substring(eqIdx + 1).Trim().Trim('"');
+                        passTypes.Add(LightModeToPassType(value));
+                    }
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[分析模式] 解析 passType 失败: {shaderPath}, {e.Message}");
+        }
+
+        return passTypes;
     }
 
     private static PassType LightModeToPassType(string lightMode)
