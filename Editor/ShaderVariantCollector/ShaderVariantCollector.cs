@@ -900,7 +900,7 @@ public static class ShaderVariantCollector
                             PassType = passType,
                             Keywords = cleanKeywords.ToArray()
                         });
-                        shaderInfo.ShariantCount++;
+                        shaderInfo.ShaderVariantCount++;
                         addedCount++;
                     }
                     continue;
@@ -1115,13 +1115,11 @@ public static class ShaderVariantCollector
             case "Deferred": return PassType.Deferred;
             case "ShadowCaster": return PassType.ShadowCaster;
             case "MotionVectors": return PassType.MotionVectors;
-            case "PrepassBase": return PassType.PrepassBase;
-            case "PrepassFinal": return PassType.PrepassFinal;
             case "Vertex": return PassType.Vertex;
             case "VertexLMRGBM": return PassType.VertexLMRGBM;
             case "VertexLM": return PassType.VertexLM;
-            case "Meta": return (PassType)4; // Unity 没有公开 Meta 的 PassType 枚举
-            default: return PassType.ForwardBase; // 默认
+            case "Meta": return (PassType)4;
+            default: return PassType.ForwardBase;
         }
     }
 
