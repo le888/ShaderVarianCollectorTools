@@ -221,15 +221,15 @@ public static class ShaderVariantCollector
                 }
                 if (excluded) continue;
 
-                // 只保留材质中实际启用的关键字 + 默认（_）状态
+                // 只保留材质中实际启用的关键字（不添加未启用的）
                 var filtered = new HashSet<string>();
                 foreach (string kw in group)
                 {
                     if (allEnabledKeywords.Contains(kw))
                         filtered.Add(kw);
                 }
-                // 至少保留一个关键字（否则该组不参与组合）
-                if (filtered.Count > 0)
+                // 至少有两个关键字才需要排列组合（单个关键字已在材质中确定）
+                if (filtered.Count >= 1)
                     processGroups.Add(filtered);
             }
 
@@ -316,8 +316,15 @@ public static class ShaderVariantCollector
             ShaderVariantInfos = allVariantInfos
         };
 
-        // 应用 multi_compile 排列组合（补充材质未启用的默认状态）
-        AddGlobalKeywordVariantsToManifest(wrapper, excludeKeywords.ToList());
+        // 收集所有材质启用的关键字（用于限制排列组合范围）
+        var allMaterialKeywords = new HashSet<string>();
+        foreach (var info in allVariantInfos)
+            foreach (var v in info.ShaderVariantElements)
+                foreach (string kw in v.Keywords)
+                    allMaterialKeywords.Add(kw);
+
+        // 应用 multi_compile 排列组合（只用材质实际启用的关键字）
+        AddGlobalKeywordVariantsToManifest(wrapper, excludeKeywords.ToList(), allMaterialKeywords);
 
         // 写入文件
         int totalVariants = 0;
@@ -1148,7 +1155,7 @@ public static class ShaderVariantCollector
     /// 策略：解析 shader 中所有 multi_compile 组，去掉组关键字得到基础变种，再重新排列组合
     /// 无组关键字的变种（如 ShadowCaster）直接保留
     /// </summary>
-    private static void AddGlobalKeywordVariantsToManifest(ShaderVariantCollectionManifest wrapper, List<string> excludeKeywords)
+    private static void AddGlobalKeywordVariantsToManifest(ShaderVariantCollectionManifest wrapper, List<string> excludeKeywords, HashSet<string> materialKeywords = null)
     {
         int addedCount = 0;
         var excludeSet = new HashSet<string>(excludeKeywords);
@@ -1159,7 +1166,7 @@ public static class ShaderVariantCollector
             List<HashSet<string>> allGroups = GetMultiCompileGroups(shaderPath);
             HashSet<string> shaderGlobalKeywords = GetShaderSupportedKeywords(shaderPath);
 
-            // 过滤掉包含排除关键字的组，并裁剪每组只保留 shader 实际支持的关键字
+            // 过滤掉包含排除关键字的组，并裁剪每组只保留材质实际启用且 shader 支持的关键字
             var processGroups = new List<HashSet<string>>();
             foreach (var group in allGroups)
             {
@@ -1177,7 +1184,7 @@ public static class ShaderVariantCollector
                 var filtered = new HashSet<string>();
                 foreach (string kw in group)
                 {
-                    if (shaderGlobalKeywords.Contains(kw))
+                    if (shaderGlobalKeywords.Contains(kw) && (materialKeywords == null || materialKeywords.Contains(kw)))
                         filtered.Add(kw);
                 }
                 if (filtered.Count > 1)
@@ -1580,23 +1587,24 @@ public static class ShaderVariantCollector
         return passTypes;
     }
 
+    // passType 值来自渲染收集的 SVC 文件（与 Unity PassType 枚举不一致）
     private static PassType LightModeToPassType(string lightMode)
     {
         switch (lightMode)
         {
-            // URP 自定义 pass — 使用渲染时记录的真实 passType 值
+            // URP pass — 真实 passType 值（从 SVC 确认）
             case "UniversalForward":
             case "UniversalForwardOnly": return (PassType)13;
             case "UniversalGBuffer": return (PassType)14;
             case "DepthOnly": return (PassType)15;
             case "DepthNormals": return (PassType)16;
             case "Universal2D": return (PassType)17;
+            case "ShadowCaster": return (PassType)8; // SVC 中确认是 8，不是 PassType.ShadowCaster(7)
+            case "Meta": return (PassType)9;
             // 标准 Unity pass
             case "ForwardBase": return PassType.ForwardBase;
             case "ForwardAdd": return PassType.ForwardAdd;
             case "Deferred": return PassType.Deferred;
-            case "ShadowCaster": return PassType.ShadowCaster;
-            case "Meta": return PassType.Meta;
             case "MotionVectors": return PassType.MotionVectors;
             case "Vertex": return PassType.Vertex;
             case "VertexLMRGBM": return PassType.VertexLMRGBM;
