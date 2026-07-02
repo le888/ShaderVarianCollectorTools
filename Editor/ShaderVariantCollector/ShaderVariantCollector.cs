@@ -594,7 +594,8 @@ public static class ShaderVariantCollector
             if (debugRaw)
             {
                 string basePath = Path.GetDirectoryName(_savePath);
-                string debugDir = Path.Combine(basePath, "debug");
+                string parentDir = Path.GetDirectoryName(basePath);
+                string debugDir = Path.Combine(parentDir, "debug");
                 EditorTools.CreateDirectory(debugDir);
                 string debugPath = Path.Combine(debugDir, Path.GetFileName(_savePath).Replace(".shadervariants", "_RAW.shadervariants"));
                 AssetDatabase.CopyAsset(_savePath, debugPath);
