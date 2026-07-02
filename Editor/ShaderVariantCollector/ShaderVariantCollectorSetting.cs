@@ -50,6 +50,7 @@ public class ShaderVariantCollectorSetting : ScriptableObject
     public List<string> globalKeywords = new List<string>();
     public LocalKeywordCollection localKeywordsCollection = new LocalKeywordCollection();
     public List<string> filterShaderNames = new List<string>();
+    public int maxVariantsPerFile = 5;
 
     // Get/Set 方法
     public static string GetFileName(string packageName)
@@ -215,6 +216,18 @@ public class ShaderVariantCollectorSetting : ScriptableObject
     {
         ShaderVariantCollectorSetting settings = GetSettings();
         settings.filterShaderNames = new List<string>(filterNames);
+        SaveSettings(settings);
+    }
+
+    public static int GetMaxVariantsPerFile(string packageName)
+    {
+        return GetSettings().maxVariantsPerFile;
+    }
+
+    public static void SetMaxVariantsPerFile(string packageName, int value)
+    {
+        ShaderVariantCollectorSetting settings = GetSettings();
+        settings.maxVariantsPerFile = value;
         SaveSettings(settings);
     }
 }

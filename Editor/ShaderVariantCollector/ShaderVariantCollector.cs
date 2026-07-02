@@ -588,9 +588,16 @@ public static class ShaderVariantCollector
         if (svc != null)
         {
             var wrapper = ShaderVariantCollectionManifest.Extract(svc);
+            int beforePermutation = 0;
+            foreach (var info in wrapper.ShaderVariantInfos) beforePermutation += info.ShaderVariantElements.Count;
+            Debug.Log($"[变种统计] 排列组合前: {wrapper.ShaderVariantInfos.Count} shader, {beforePermutation} 变种");
 
             // 自动处理 multi_compile 组，重新排列组合变种
             AddGlobalKeywordVariantsToManifest(wrapper, _globalKeywords ?? new List<string>());
+
+            int afterPermutation = 0;
+            foreach (var info in wrapper.ShaderVariantInfos) afterPermutation += info.ShaderVariantElements.Count;
+            Debug.Log($"[变种统计] 排列组合后: {wrapper.ShaderVariantInfos.Count} shader, {afterPermutation} 变种");
             
             // 获取Always Included Shaders列表
             var alwaysIncludedShaderNames = GetAlwaysIncludedShaderNames();
@@ -605,6 +612,10 @@ public static class ShaderVariantCollector
             {
                 wrapper.ShaderVariantInfos.RemoveAll(info => _filterShaderName.Contains(info.ShaderName));
             }
+
+            int afterFilter = 0;
+            foreach (var info in wrapper.ShaderVariantInfos) afterFilter += info.ShaderVariantElements.Count;
+            Debug.Log($"[变种统计] 过滤后: {wrapper.ShaderVariantInfos.Count} shader, {afterFilter} 变种");
             
             string jsonData = JsonUtility.ToJson(wrapper, true);
             
@@ -629,38 +640,55 @@ public static class ShaderVariantCollector
                     Directory.CreateDirectory(basePath);
                 }
                 
+                int maxVariantsPerFile = ShaderVariantCollectorSetting.GetMaxVariantsPerFile(_currentPackageName);
+
                 foreach (var shaderInfo in wrapper.ShaderVariantInfos)
                 {
                     string shaderName = shaderInfo.ShaderName;
                     // 处理shader名称，将路径分隔符替换为下划线
                     shaderName = shaderName.Replace('/', '_').Replace('\\', '_');
-                    // 直接使用shader名称作为文件名，不包含原始文件名
-                    string shaderSavePath = Path.Combine(basePath, $"{shaderName}.shadervariants");
-                    //添加保存的shader名称
-                    shaderNamesSave.Add(shaderName);
-                    
-                    // 创建新的ShaderVariantCollection
-                    ShaderVariantCollection shaderSvc = new ShaderVariantCollection();
-                    
-                    // 添加该shader的所有变体
+
                     Shader shader = AssetDatabase.LoadAssetAtPath<Shader>(shaderInfo.AssetPath);
-                    if (shader != null)
+                    if (shader == null) continue;
+
+                    // 收集有效变种（try/catch 过滤不支持的关键字组合）
+                    var validVariants = new List<ShaderVariantCollection.ShaderVariant>();
+                    foreach (var variant in shaderInfo.ShaderVariantElements)
                     {
-                        foreach (var variant in shaderInfo.ShaderVariantElements)
+                        try
                         {
-                            try
-                            {
-                                shaderSvc.Add(new ShaderVariantCollection.ShaderVariant(shader, variant.PassType, variant.Keywords));
-                            }
-                            catch (ArgumentException)
-                            {
-                                // 该 pass 不支持此关键字组合（如 Meta pass 不支持阴影关键字），跳过
-                            }
+                            validVariants.Add(new ShaderVariantCollection.ShaderVariant(shader, variant.PassType, variant.Keywords));
+                        }
+                        catch (ArgumentException)
+                        {
+                            // 该 pass 不支持此关键字组合，跳过
                         }
                     }
-                    
-                    // 保存shader变体集
-                    AssetDatabase.CreateAsset(shaderSvc, shaderSavePath);
+
+                    Debug.Log($"[拆分保存] {shaderName}: manifest变种={shaderInfo.ShaderVariantElements.Count}, 有效变种={validVariants.Count}");
+
+                    // 不拆分或变种数未超限，一个文件；否则拆分
+                    if (maxVariantsPerFile <= 0 || validVariants.Count <= maxVariantsPerFile)
+                    {
+                        string shaderSavePath = Path.Combine(basePath, $"{shaderName}.shadervariants");
+                        shaderNamesSave.Add(shaderName);
+                        WriteShaderVariantFile(shaderSavePath, shader, validVariants);
+                    }
+                    else
+                    {
+                        // 按数量拆分为多个文件
+                        int fileIndex = 0;
+                        for (int offset = 0; offset < validVariants.Count; offset += maxVariantsPerFile)
+                        {
+                            int count = Mathf.Min(maxVariantsPerFile, validVariants.Count - offset);
+                            string shaderSavePath = Path.Combine(basePath, $"{shaderName}_{fileIndex}.shadervariants");
+                            shaderNamesSave.Add($"{shaderName}_{fileIndex}");
+
+                            var chunk = validVariants.GetRange(offset, count);
+                            WriteShaderVariantFile(shaderSavePath, shader, chunk);
+                            fileIndex++;
+                        }
+                    }
                 }
 
                 //保存shader名称为txt文件，每个shader名称一行
@@ -674,6 +702,61 @@ public static class ShaderVariantCollector
         }
 
         AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
+    }
+
+    /// <summary>
+    /// 绕过 ShaderVariantCollection.Add() 的限制，通过 SerializedObject 直接写入变种
+    /// </summary>
+    private static void WriteShaderVariantFile(string savePath, Shader shader, List<ShaderVariantCollection.ShaderVariant> variants)
+    {
+        ShaderVariantCollection svc = new ShaderVariantCollection();
+        AssetDatabase.CreateAsset(svc, savePath);
+
+        using (var so = new SerializedObject(svc))
+        {
+            var shadersArray = so.FindProperty("m_Shaders.Array");
+            // 清空默认数据
+            shadersArray.arraySize = 0;
+
+            // 构建 shader -> variants 映射
+            var shaderVariants = new Dictionary<Shader, List<(PassType passType, string[] keywords)>>();
+            foreach (var sv in variants)
+            {
+                if (!shaderVariants.ContainsKey(sv.shader))
+                    shaderVariants[sv.shader] = new List<(PassType, string[])>();
+                shaderVariants[sv.shader].Add((sv.passType, sv.keywords));
+            }
+
+            int shaderIndex = 0;
+            foreach (var kvp in shaderVariants)
+            {
+                shadersArray.InsertArrayElementAtIndex(shaderIndex);
+                var shaderEntry = shadersArray.GetArrayElementAtIndex(shaderIndex);
+
+                // 设置 shader 引用
+                var firstProp = shaderEntry.FindPropertyRelative("first");
+                firstProp.objectReferenceValue = kvp.Key;
+
+                // 设置 variants
+                var secondProp = shaderEntry.FindPropertyRelative("second");
+                var variantsArray = secondProp.FindPropertyRelative("variants");
+                variantsArray.arraySize = kvp.Value.Count;
+
+                for (int v = 0; v < kvp.Value.Count; v++)
+                {
+                    var variantProp = variantsArray.GetArrayElementAtIndex(v);
+                    variantProp.FindPropertyRelative("passType").intValue = (int)kvp.Value[v].passType;
+                    variantProp.FindPropertyRelative("keywords").stringValue = string.Join(" ", kvp.Value[v].keywords);
+                }
+
+                shaderIndex++;
+            }
+
+            so.ApplyModifiedProperties();
+        }
+
+        EditorUtility.SetDirty(svc);
+        AssetDatabase.SaveAssets();
     }
     
 
@@ -691,8 +774,9 @@ public static class ShaderVariantCollector
         {
             string shaderPath = shaderInfo.AssetPath;
             List<HashSet<string>> allGroups = GetMultiCompileGroups(shaderPath);
+            HashSet<string> shaderGlobalKeywords = GetShaderSupportedKeywords(shaderPath);
 
-            // 过滤掉包含排除关键字的组
+            // 过滤掉包含排除关键字的组，并裁剪每组只保留 shader 实际支持的关键字
             var processGroups = new List<HashSet<string>>();
             foreach (var group in allGroups)
             {
@@ -705,8 +789,17 @@ public static class ShaderVariantCollector
                         break;
                     }
                 }
-                if (!excluded)
-                    processGroups.Add(group);
+                if (excluded) continue;
+
+                // 只保留 shader 全局关键字列表中实际存在的关键字
+                var filtered = new HashSet<string>();
+                foreach (string kw in group)
+                {
+                    if (shaderGlobalKeywords.Contains(kw))
+                        filtered.Add(kw);
+                }
+                if (filtered.Count > 1)
+                    processGroups.Add(filtered);
             }
 
             if (processGroups.Count == 0) continue;
@@ -728,15 +821,17 @@ public static class ShaderVariantCollector
             // 清空变种列表，重新构建
             shaderInfo.ShaderVariantElements.Clear();
             shaderInfo.ShaderVariantCount = 0;
+            var seenVariants = new HashSet<string>();
 
             foreach (var (passType, baseKeywords) in existingVariants)
             {
-                // 第一步：去掉组中的关键字，得到基础关键字
+                // 第一步：去掉组中的关键字，得到基础关键字（trim 去除前导空格）
                 var cleanKeywords = new List<string>();
                 foreach (string kw in baseKeywords)
                 {
-                    if (!allGroupKeywords.Contains(kw))
-                        cleanKeywords.Add(kw);
+                    string trimmed = kw.Trim();
+                    if (!allGroupKeywords.Contains(trimmed))
+                        cleanKeywords.Add(trimmed);
                 }
                 cleanKeywords.Sort();
 
@@ -746,8 +841,14 @@ public static class ShaderVariantCollector
                 foreach (var combo in combinations)
                 {
                     var finalKeywords = new List<string>(cleanKeywords);
-                    finalKeywords.AddRange(combo);
+                    foreach (string kw in combo)
+                        finalKeywords.Add(kw.Trim());
                     finalKeywords.Sort();
+
+                    // 去重：基于 passType + 关键字字符串
+                    string key = $"{(int)passType}|{string.Join(" ", finalKeywords)}";
+                    if (seenVariants.Contains(key)) continue;
+                    seenVariants.Add(key);
 
                     shaderInfo.ShaderVariantElements.Add(new ShaderVariantCollectionManifest.ShaderVariantElement
                     {
@@ -833,10 +934,10 @@ public static class ShaderVariantCollector
             foreach (string line in lines)
             {
                 string trimmed = line.Trim();
-                if (trimmed.StartsWith("#pragma multi_compile") || trimmed.StartsWith("#pragma shader_feature"))
+                if (trimmed.StartsWith("#pragma multi_compile"))
                 {
                     string[] parts = trimmed.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-                    // 跳过 "multi_compile" 或 "shader_feature" 本身，以及 "multi_compile_local" 等变体
+                    // 跳过 "multi_compile" 本身，以及 "multi_compile_local" 等变体
                     var keywords = new HashSet<string>();
                     for (int i = 1; i < parts.Length; i++)
                     {
@@ -862,7 +963,7 @@ public static class ShaderVariantCollector
     }
 
     /// <summary>
-    /// 获取 shader 源码中声明支持的所有关键字
+    /// 获取 shader 源码中声明的所有关键字
     /// </summary>
     private static HashSet<string> GetShaderSupportedKeywords(string shaderPath)
     {
@@ -893,11 +994,13 @@ public static class ShaderVariantCollector
         }
         catch (Exception e)
         {
-            Debug.LogWarning($"[全局关键字注入] 读取 shader 失败: {shaderPath}, {e.Message}");
+            Debug.LogWarning($"[关键字注入] 读取 shader 失败: {shaderPath}, {e.Message}");
         }
 
         return keywords;
     }
+
+
 
     public static HashSet<string> GetAlwaysIncludedShaderNames()
     {

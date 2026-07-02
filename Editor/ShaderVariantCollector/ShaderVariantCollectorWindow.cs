@@ -36,6 +36,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
     private bool? _pendingSplitByName;
     private bool? _pendingCollectScene;
     private bool? _pendingSaveJson;
+    private int _pendingMaxVariantsPerFile = -1;
     private int _pendingRemoveBlackIndex = -1;
     private int _pendingRemoveFilterIndex = -1;
     private int _pendingRemoveLocalIndex = -1;
@@ -56,6 +57,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
         _pendingSplitByName = null;
         _pendingCollectScene = null;
         _pendingSaveJson = null;
+        _pendingMaxVariantsPerFile = -1;
         _pendingRemoveBlackIndex = -1;
         _pendingRemoveFilterIndex = -1;
         _pendingRemoveLocalIndex = -1;
@@ -108,6 +110,11 @@ public class ShaderVariantCollectorWindow : EditorWindow
         if (newSplitByName != splitByName)
             _pendingSplitByName = newSplitByName;
 
+        int maxVariants = ShaderVariantCollectorSetting.GetMaxVariantsPerFile(_currentPackageName);
+        int newMaxVariants = EditorGUILayout.IntSlider("每文件最大变种数（0=不拆分）", maxVariants, 0, 100);
+        if (newMaxVariants != maxVariants)
+            _pendingMaxVariantsPerFile = newMaxVariants;
+
         bool collectScene = ShaderVariantCollectorSetting.GetCollectSceneVariants(_currentPackageName);
         bool newCollectScene = EditorGUILayout.Toggle("收集场景变体", collectScene);
         if (newCollectScene != collectScene)
@@ -152,6 +159,8 @@ public class ShaderVariantCollectorWindow : EditorWindow
             ShaderVariantCollectorSetting.SetCollectSceneVariants(_currentPackageName, _pendingCollectScene.Value);
         if (_pendingSaveJson.HasValue)
             ShaderVariantCollectorSetting.SetSaveJsonFile(_currentPackageName, _pendingSaveJson.Value);
+        if (_pendingMaxVariantsPerFile >= 0)
+            ShaderVariantCollectorSetting.SetMaxVariantsPerFile(_currentPackageName, _pendingMaxVariantsPerFile);
 
         // 列表删除
         if (_pendingRemoveBlackIndex >= 0)
