@@ -589,11 +589,8 @@ public static class ShaderVariantCollector
         {
             var wrapper = ShaderVariantCollectionManifest.Extract(svc);
 
-            // 直接注入全局关键字变种（绕过渲染，适用于 URP 管线内部关键字）
-            if (_globalKeywords != null && _globalKeywords.Count > 0)
-            {
-                AddGlobalKeywordVariantsToManifest(wrapper, _globalKeywords);
-            }
+            // 自动处理 multi_compile 组，重新排列组合变种
+            AddGlobalKeywordVariantsToManifest(wrapper, _globalKeywords ?? new List<string>());
             
             // 获取Always Included Shaders列表
             var alwaysIncludedShaderNames = GetAlwaysIncludedShaderNames();
@@ -681,39 +678,44 @@ public static class ShaderVariantCollector
     
 
     /// <summary>
-    /// 向 manifest 中注入全局关键字变种，不依赖渲染
-    /// 策略：先去掉 multi_compile 组中的关键字得到基础变种，再重新排列组合
+    /// 向 manifest 中注入 multi_compile 变种，不依赖渲染
+    /// 策略：自动扫描 shader 中所有 multi_compile 组，去掉组关键字得到基础变种，再重新排列组合
+    /// excludeKeywords 中的组会被跳过（不生成变种）
     /// </summary>
-    private static void AddGlobalKeywordVariantsToManifest(ShaderVariantCollectionManifest wrapper, List<string> globalKeywords)
+    private static void AddGlobalKeywordVariantsToManifest(ShaderVariantCollectionManifest wrapper, List<string> excludeKeywords)
     {
         int addedCount = 0;
+        var excludeSet = new HashSet<string>(excludeKeywords);
 
         foreach (var shaderInfo in wrapper.ShaderVariantInfos)
         {
             string shaderPath = shaderInfo.AssetPath;
-            List<HashSet<string>> mutexGroups = GetMultiCompileGroups(shaderPath);
+            List<HashSet<string>> allGroups = GetMultiCompileGroups(shaderPath);
 
-            // 找到包含全局关键字的 multi_compile 组
-            var affectedGroups = new List<HashSet<string>>();
-            foreach (var group in mutexGroups)
+            // 过滤掉包含排除关键字的组
+            var processGroups = new List<HashSet<string>>();
+            foreach (var group in allGroups)
             {
-                foreach (string globalKw in globalKeywords)
+                bool excluded = false;
+                foreach (string kw in group)
                 {
-                    if (group.Contains(globalKw))
+                    if (excludeSet.Contains(kw))
                     {
-                        affectedGroups.Add(group);
+                        excluded = true;
                         break;
                     }
                 }
+                if (!excluded)
+                    processGroups.Add(group);
             }
 
-            if (affectedGroups.Count == 0) continue;
+            if (processGroups.Count == 0) continue;
 
-            // 收集所有受影响组的关键字
-            var allAffectedKeywords = new HashSet<string>();
-            foreach (var group in affectedGroups)
+            // 收集所有需要处理的组关键字
+            var allGroupKeywords = new HashSet<string>();
+            foreach (var group in processGroups)
             {
-                allAffectedKeywords.UnionWith(group);
+                allGroupKeywords.UnionWith(group);
             }
 
             // 收集已有变种（快照）
@@ -729,18 +731,17 @@ public static class ShaderVariantCollector
 
             foreach (var (passType, baseKeywords) in existingVariants)
             {
-                // 第一步：去掉受影响组中的关键字，得到基础关键字
+                // 第一步：去掉组中的关键字，得到基础关键字
                 var cleanKeywords = new List<string>();
                 foreach (string kw in baseKeywords)
                 {
-                    if (!allAffectedKeywords.Contains(kw))
+                    if (!allGroupKeywords.Contains(kw))
                         cleanKeywords.Add(kw);
                 }
                 cleanKeywords.Sort();
 
-                // 第二步：用受影响组的关键字重新排列组合
-                // 生成所有组的笛卡尔积
-                var combinations = GenerateGroupCombinations(affectedGroups);
+                // 第二步：用所有组的关键字重新排列组合（笛卡尔积）
+                var combinations = GenerateGroupCombinations(processGroups);
 
                 foreach (var combo in combinations)
                 {
@@ -762,16 +763,30 @@ public static class ShaderVariantCollector
         if (addedCount > 0)
         {
             wrapper.VariantTotalCount += addedCount;
-            Debug.Log($"[全局关键字注入] 重新组合了 {addedCount} 个变种");
+            Debug.Log($"[multi_compile 变种重组] 处理了 {addedCount} 个变种");
         }
     }
 
+    private const int MaxCombinationsPerVariant = 256;
+
     /// <summary>
-    /// 生成多个 multi_compile 组的笛卡尔积
-    /// 每组取一个关键字（包括空，表示不启用该组的任何关键字）
+    /// 生成多个 multi_compile 组的笛卡尔积，上限 MaxCombinationsPerVariant
     /// </summary>
     private static List<List<string>> GenerateGroupCombinations(List<HashSet<string>> groups)
     {
+        // 先计算总组合数
+        long total = 1;
+        foreach (var group in groups)
+        {
+            total *= (group.Count + 1); // +1 for "skip this group"
+        }
+        total -= 1; // 减去全部跳过的情况
+
+        if (total > MaxCombinationsPerVariant)
+        {
+            Debug.LogWarning($"[multi_compile] 组合数 {total} 超过上限 {MaxCombinationsPerVariant}，只取前 {MaxCombinationsPerVariant} 个。请在排除列表中添加不需要的关键字以减少组合。");
+        }
+
         var result = new List<List<string>>();
         GenerateGroupCombinationsRecursive(groups, 0, new List<string>(), result);
         return result;
@@ -779,6 +794,8 @@ public static class ShaderVariantCollector
 
     private static void GenerateGroupCombinationsRecursive(List<HashSet<string>> groups, int index, List<string> current, List<List<string>> result)
     {
+        if (result.Count >= MaxCombinationsPerVariant) return;
+
         if (index >= groups.Count)
         {
             if (current.Count > 0)
@@ -792,6 +809,7 @@ public static class ShaderVariantCollector
         // 选该组的每个关键字
         foreach (string kw in groups[index])
         {
+            if (result.Count >= MaxCombinationsPerVariant) return;
             current.Add(kw);
             GenerateGroupCombinationsRecursive(groups, index + 1, current, result);
             current.RemoveAt(current.Count - 1);

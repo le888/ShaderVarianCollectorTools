@@ -386,7 +386,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
 
     private void DrawGlobalKeywords()
     {
-        _showGlobalKeywords = EditorGUILayout.Foldout(_showGlobalKeywords, "全局关键字", true);
+        _showGlobalKeywords = EditorGUILayout.Foldout(_showGlobalKeywords, "排除关键字（不生成变种）", true);
         if (!_showGlobalKeywords) return;
 
         EditorGUI.indentLevel++;
