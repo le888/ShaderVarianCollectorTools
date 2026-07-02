@@ -235,7 +235,7 @@ public static class ShaderVariantCollector
                         if (excludeKeywords.Contains(kw)) { excluded = true; break; }
                     }
                     if (excluded) continue;
-                    if (group.Count > 1)
+                    if (group.Count >= 1)
                         passGroups.Add(new HashSet<string>(group));
                 }
 
@@ -1154,7 +1154,7 @@ public static class ShaderVariantCollector
                     if (shaderGlobalKeywords.Contains(kw) && (materialKeywords == null || materialKeywords.Contains(kw)))
                         filtered.Add(kw);
                 }
-                if (filtered.Count > 1)
+                if (filtered.Count >= 1)
                     processGroups.Add(filtered);
             }
 
