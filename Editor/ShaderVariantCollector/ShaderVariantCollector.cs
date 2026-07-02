@@ -216,6 +216,7 @@ public static class ShaderVariantCollector
 
             // 为每个 pass 生成变种（使用各自 pass 的 multi_compile 组）
             int totalVariantsForShader = 0;
+            bool isFirstPass = true;
             foreach (var passInfo in passInfos)
             {
                 // 过滤该 pass 的排除关键字组
@@ -237,12 +238,17 @@ public static class ShaderVariantCollector
                 foreach (var group in passGroups)
                     passGroupKeywords.UnionWith(group);
 
-                // 非组关键字（shader_feature 等，只在材质中启用且不在该 pass 组中的）
+                // 非组关键字（shader_feature 等）只加到主 pass（第一个有 multi_compile 组的 pass）
+                // ShadowCaster/DepthOnly/Meta 等 pass 不支持这些关键字
                 var passNonGroupKeywords = new List<string>();
-                foreach (string kw in allEnabledKeywords)
+                if (isFirstPass && passGroups.Count > 0)
                 {
-                    if (!passGroupKeywords.Contains(kw))
-                        passNonGroupKeywords.Add(kw);
+                    foreach (string kw in allEnabledKeywords)
+                    {
+                        if (!passGroupKeywords.Contains(kw))
+                            passNonGroupKeywords.Add(kw);
+                    }
+                    isFirstPass = false;
                 }
                 passNonGroupKeywords.Sort();
 
