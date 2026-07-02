@@ -825,12 +825,12 @@ public static class ShaderVariantCollector
 
             foreach (var (passType, baseKeywords) in existingVariants)
             {
-                // 第一步：去掉组中的关键字，得到基础关键字（trim 去除前导空格）
+                // 第一步：去掉组中的关键字，得到基础关键字（trim 并过滤空串）
                 var cleanKeywords = new List<string>();
                 foreach (string kw in baseKeywords)
                 {
                     string trimmed = kw.Trim();
-                    if (!allGroupKeywords.Contains(trimmed))
+                    if (!string.IsNullOrEmpty(trimmed) && !allGroupKeywords.Contains(trimmed))
                         cleanKeywords.Add(trimmed);
                 }
                 cleanKeywords.Sort();
@@ -842,7 +842,11 @@ public static class ShaderVariantCollector
                 {
                     var finalKeywords = new List<string>(cleanKeywords);
                     foreach (string kw in combo)
-                        finalKeywords.Add(kw.Trim());
+                    {
+                        string trimmed = kw.Trim();
+                        if (!string.IsNullOrEmpty(trimmed))
+                            finalKeywords.Add(trimmed);
+                    }
                     finalKeywords.Sort();
 
                     // 去重：基于 passType + 关键字字符串
