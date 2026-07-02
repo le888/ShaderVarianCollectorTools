@@ -850,11 +850,19 @@ public static class ShaderVariantCollector
                 }
                 cleanKeywords.Sort();
 
-                // 第二步：用所有组的关键字重新排列组合（笛卡尔积）
-                var combinations = GenerateGroupCombinations(processGroups);
+                // 检查原始变种是否包含任何组关键字
+                bool hasGroupKeyword = false;
+                foreach (string kw in baseKeywords)
+                {
+                    if (allGroupKeywords.Contains(kw.Trim()))
+                    {
+                        hasGroupKeyword = true;
+                        break;
+                    }
+                }
 
-                // 没有组合时保留原始变种（如 ShadowCaster 无 multi_compile 关键字）
-                if (combinations.Count == 0)
+                // 如果当前变种没有 multi_compile 关键字（如 ShadowCaster），直接保留原始
+                if (!hasGroupKeyword)
                 {
                     string key = $"{(int)passType}|{string.Join(" ", cleanKeywords)}";
                     if (!seenVariants.Contains(key))
@@ -870,6 +878,9 @@ public static class ShaderVariantCollector
                     }
                     continue;
                 }
+
+                // 第二步：用所有组的关键字重新排列组合（笛卡尔积）
+                var combinations = GenerateGroupCombinations(processGroups);
 
                 foreach (var combo in combinations)
                 {
