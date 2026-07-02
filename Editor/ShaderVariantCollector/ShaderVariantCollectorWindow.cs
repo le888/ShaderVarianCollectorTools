@@ -38,6 +38,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
     private bool? _pendingSaveJson;
     private int _pendingMaxVariantsPerFile = -1;
     private bool? _pendingSaveDebugRawSVC;
+    private bool? _pendingAnalyzeMode;
     private int _pendingRemoveBlackIndex = -1;
     private int _pendingRemoveFilterIndex = -1;
     private int _pendingRemoveLocalIndex = -1;
@@ -60,6 +61,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
         _pendingSaveJson = null;
         _pendingMaxVariantsPerFile = -1;
         _pendingSaveDebugRawSVC = null;
+        _pendingAnalyzeMode = null;
         _pendingRemoveBlackIndex = -1;
         _pendingRemoveFilterIndex = -1;
         _pendingRemoveLocalIndex = -1;
@@ -127,6 +129,11 @@ public class ShaderVariantCollectorWindow : EditorWindow
         if (newSaveJson != saveJson)
             _pendingSaveJson = newSaveJson;
 
+        bool analyzeMode = ShaderVariantCollectorSetting.GetAnalyzeMode(_currentPackageName);
+        bool newAnalyzeMode = EditorGUILayout.Toggle("分析模式（不渲染，直接读材质）", analyzeMode);
+        if (newAnalyzeMode != analyzeMode)
+            _pendingAnalyzeMode = newAnalyzeMode;
+
         bool debugRaw = ShaderVariantCollectorSetting.GetSaveDebugRawSVC(_currentPackageName);
         bool newDebugRaw = EditorGUILayout.Toggle("Debug: 保存原始渲染变体", debugRaw);
         if (newDebugRaw != debugRaw)
@@ -170,6 +177,8 @@ public class ShaderVariantCollectorWindow : EditorWindow
             ShaderVariantCollectorSetting.SetMaxVariantsPerFile(_currentPackageName, _pendingMaxVariantsPerFile);
         if (_pendingSaveDebugRawSVC.HasValue)
             ShaderVariantCollectorSetting.SetSaveDebugRawSVC(_currentPackageName, _pendingSaveDebugRawSVC.Value);
+        if (_pendingAnalyzeMode.HasValue)
+            ShaderVariantCollectorSetting.SetAnalyzeMode(_currentPackageName, _pendingAnalyzeMode.Value);
 
         // 列表删除
         if (_pendingRemoveBlackIndex >= 0)
@@ -448,11 +457,21 @@ public class ShaderVariantCollectorWindow : EditorWindow
         string svName = ShaderVariantCollectorSetting.GetFileName(_currentPackageName);
         string savePath = ShaderVariantCollectorSetting.GeFileSavePath(_currentPackageName);
         string searchPath = ShaderVariantCollectorSetting.GeFileSearchPath(_currentPackageName);
-        string searchScenePath = ShaderVariantCollectorSetting.GeSecneSearchPath(_currentPackageName);
         List<string> blackPaths = ShaderVariantCollectorSetting.GeBlackPath(_currentPackageName);
         List<string> filterNames = ShaderVariantCollectorSetting.GetFilterShaderNames(_currentPackageName);
         bool splitByShaderName = ShaderVariantCollectorSetting.GetSplitByShaderName(_currentPackageName);
-        int processCapacity = ShaderVariantCollectorSetting.GeProcessCapacity(_currentPackageName);
-        ShaderVariantCollector.Run($"{savePath}/{svName}", searchPath, searchScenePath, blackPaths, filterNames.ToArray(), processCapacity, splitByShaderName, null, _currentPackageName);
+
+        if (ShaderVariantCollectorSetting.GetAnalyzeMode(_currentPackageName))
+        {
+            // 分析模式：不渲染，直接读材质关键字
+            ShaderVariantCollector.RunAnalyze($"{savePath}/{svName}", searchPath, blackPaths, filterNames.ToArray(), splitByShaderName, _currentPackageName);
+        }
+        else
+        {
+            // 渲染模式
+            string searchScenePath = ShaderVariantCollectorSetting.GeSecneSearchPath(_currentPackageName);
+            int processCapacity = ShaderVariantCollectorSetting.GeProcessCapacity(_currentPackageName);
+            ShaderVariantCollector.Run($"{savePath}/{svName}", searchPath, searchScenePath, blackPaths, filterNames.ToArray(), processCapacity, splitByShaderName, null, _currentPackageName);
+        }
     }
 }

@@ -52,6 +52,7 @@ public class ShaderVariantCollectorSetting : ScriptableObject
     public List<string> filterShaderNames = new List<string>();
     public int maxVariantsPerFile = 5;
     public bool saveDebugRawSVC = false;
+    public bool analyzeMode = false;
 
     // Get/Set 方法
     public static string GetFileName(string packageName)
@@ -241,6 +242,18 @@ public class ShaderVariantCollectorSetting : ScriptableObject
     {
         ShaderVariantCollectorSetting settings = GetSettings();
         settings.saveDebugRawSVC = value;
+        SaveSettings(settings);
+    }
+
+    public static bool GetAnalyzeMode(string packageName)
+    {
+        return GetSettings().analyzeMode;
+    }
+
+    public static void SetAnalyzeMode(string packageName, bool value)
+    {
+        ShaderVariantCollectorSetting settings = GetSettings();
+        settings.analyzeMode = value;
         SaveSettings(settings);
     }
 }
