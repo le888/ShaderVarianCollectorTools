@@ -316,16 +316,7 @@ public static class ShaderVariantCollector
             ShaderVariantInfos = allVariantInfos
         };
 
-        // 收集所有材质启用的关键字（用于限制排列组合范围）
-        var allMaterialKeywords = new HashSet<string>();
-        foreach (var info in allVariantInfos)
-            foreach (var v in info.ShaderVariantElements)
-                foreach (string kw in v.Keywords)
-                    allMaterialKeywords.Add(kw);
-
-        // 应用 multi_compile 排列组合（只用材质实际启用的关键字）
-        AddGlobalKeywordVariantsToManifest(wrapper, excludeKeywords.ToList(), allMaterialKeywords);
-
+        // 分析模式已自行处理 multi_compile 排列组合，不再调用 AddGlobalKeywordVariantsToManifest
         // 写入文件
         int totalVariants = 0;
 
