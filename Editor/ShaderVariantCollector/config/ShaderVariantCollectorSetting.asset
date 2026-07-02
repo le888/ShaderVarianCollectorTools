@@ -23,6 +23,10 @@ MonoBehaviour:
   saveJsonFile: 0
   globalKeywords:
   - _MAIN_LIGHT_SHADOWS_CASCADE
+  - _MAIN_LIGHT_SHADOWS
+  - _RAIN
+  - _WEATHER_SNOW
+  - _RO_LIGHTMAP_ON
   localKeywordsCollection:
     LocalKeywords:
     - ShaderName: Custom/BlendAddEffect

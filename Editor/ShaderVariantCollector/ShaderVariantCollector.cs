@@ -165,83 +165,14 @@ public static class ShaderVariantCollector
             if (_allMaterials.Count > 0)
             {
                 _elapsedTime = Stopwatch.StartNew();
-                if (_globalKeywords.Count <= 0)
-                {
-                    _steps = ESteps.CollectSleeping;    
-                }
-                
+                _steps = ESteps.CollectSleeping;
             }
-            else if(_steps != ESteps.CollectWithWaitGlablKeyWords)
+            else
             {
                 _elapsedTime = Stopwatch.StartNew();
                 _steps = ESteps.CollectWaitToScene;
             }
         }
-
-        if (_steps == ESteps.CollectWithWaitGlablKeyWords)
-        {
-            if (_elapsedTime.ElapsedMilliseconds > SleepMilliseconds)
-            {
-                _steps = ESteps.ApplyGlobalKeywords;
-            }
-
-        }
-
-        if (_steps == ESteps.ApplyGlobalKeywords)
-        {
-            _elapsedTime = Stopwatch.StartNew();
-            if (_currentKeywordIndex >= _globalKeywords.Count)
-            {
-                // 确保在完成所有全局关键字处理后，重置所有关键字状态
-                foreach (var keyword in _globalKeywords)
-                {
-                    HandleKeyWorld(keyword, false);
-                }
-                _currentKeywordIndex = 0;
-                _steps = ESteps.CollectVariants;
-                return;
-            }
-
-            // 先禁用所有全局关键字，确保干净的状态
-            foreach (var keyword in _globalKeywords)
-            {
-                HandleKeyWorld(keyword, false);
-            }
-            
-            // 启用当前关键字
-            var currentKeyword = _globalKeywords[_currentKeywordIndex];
-            HandleKeyWorld(currentKeyword, true);
-            Debug.Log("应用全局关键字: " + currentKeyword);
-            _currentKeywordIndex++;
-            _steps = ESteps.CollectGlobalKeywordsSleeping;
-        }
-
-        if (_steps == ESteps.CollectGlobalKeywordsSleeping)
-        {
-            if (_elapsedTime.ElapsedMilliseconds > SleepMilliseconds)
-            {
-                _elapsedTime.Stop();
-                // 在应用下一个关键字之前，重新创建材质球体
-                if (_currentKeywordIndex < _globalKeywords.Count)
-                {
-                    DestroyAllSpheres();
-                    OnlyCreate(_rangeMt);
-                    _elapsedTime = Stopwatch.StartNew();
-                }
-                _steps = ESteps.ApplyGlobalKeywords;
-                return;
-            }
-        }
-
-        // if (_steps == ESteps.CollectGlobalKeywordsClearSleeping)
-        // {
-        //     if (_elapsedTime.ElapsedMilliseconds > SleepMilliseconds)
-        //     {
-        //         _elapsedTime.Stop();
-        //         _steps = ESteps.ApplyGlobalKeywords;
-        //         return;
-        //     }
-        // }
 
         if (_steps == ESteps.CollectWaitToScene)
         {
@@ -514,23 +445,11 @@ public static class ShaderVariantCollector
     }
     private static void CollectVariants(List<MaterialInfo> materials)
     {
-        if (materials.Count<= 0)
+        if (materials.Count <= 0)
         {
             return;
         }
         OnlyCreate(materials);
-
-        // 如果有全局关键字，开始逐个应用
-        if (_globalKeywords != null && _globalKeywords.Count > 0)
-        {
-            _elapsedTime = Stopwatch.StartNew();
-            _currentKeywordIndex = 0;
-            foreach (var keyword in _globalKeywords)
-            {
-                HandleKeyWorld(keyword, false);
-            }
-            _steps = ESteps.CollectWithWaitGlablKeyWords;
-        }
     }
     
     private static void CollectScene(string scenePath)
@@ -669,6 +588,12 @@ public static class ShaderVariantCollector
         if (svc != null)
         {
             var wrapper = ShaderVariantCollectionManifest.Extract(svc);
+
+            // 直接注入全局关键字变种（绕过渲染，适用于 URP 管线内部关键字）
+            if (_globalKeywords != null && _globalKeywords.Count > 0)
+            {
+                AddGlobalKeywordVariantsToManifest(wrapper, _globalKeywords);
+            }
             
             // 获取Always Included Shaders列表
             var alwaysIncludedShaderNames = GetAlwaysIncludedShaderNames();
@@ -726,7 +651,14 @@ public static class ShaderVariantCollector
                     {
                         foreach (var variant in shaderInfo.ShaderVariantElements)
                         {
-                            shaderSvc.Add(new ShaderVariantCollection.ShaderVariant(shader, variant.PassType, variant.Keywords));
+                            try
+                            {
+                                shaderSvc.Add(new ShaderVariantCollection.ShaderVariant(shader, variant.PassType, variant.Keywords));
+                            }
+                            catch (ArgumentException)
+                            {
+                                // 该 pass 不支持此关键字组合（如 Meta pass 不支持阴影关键字），跳过
+                            }
                         }
                     }
                     
@@ -747,6 +679,207 @@ public static class ShaderVariantCollector
         AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
     }
     
+
+    /// <summary>
+    /// 向 manifest 中注入全局关键字变种，不依赖渲染
+    /// 策略：先去掉 multi_compile 组中的关键字得到基础变种，再重新排列组合
+    /// </summary>
+    private static void AddGlobalKeywordVariantsToManifest(ShaderVariantCollectionManifest wrapper, List<string> globalKeywords)
+    {
+        int addedCount = 0;
+
+        foreach (var shaderInfo in wrapper.ShaderVariantInfos)
+        {
+            string shaderPath = shaderInfo.AssetPath;
+            List<HashSet<string>> mutexGroups = GetMultiCompileGroups(shaderPath);
+
+            // 找到包含全局关键字的 multi_compile 组
+            var affectedGroups = new List<HashSet<string>>();
+            foreach (var group in mutexGroups)
+            {
+                foreach (string globalKw in globalKeywords)
+                {
+                    if (group.Contains(globalKw))
+                    {
+                        affectedGroups.Add(group);
+                        break;
+                    }
+                }
+            }
+
+            if (affectedGroups.Count == 0) continue;
+
+            // 收集所有受影响组的关键字
+            var allAffectedKeywords = new HashSet<string>();
+            foreach (var group in affectedGroups)
+            {
+                allAffectedKeywords.UnionWith(group);
+            }
+
+            // 收集已有变种（快照）
+            var existingVariants = new List<(PassType passType, string[] keywords)>();
+            foreach (var variant in shaderInfo.ShaderVariantElements)
+            {
+                existingVariants.Add((variant.PassType, variant.Keywords));
+            }
+
+            // 清空变种列表，重新构建
+            shaderInfo.ShaderVariantElements.Clear();
+            shaderInfo.ShaderVariantCount = 0;
+
+            foreach (var (passType, baseKeywords) in existingVariants)
+            {
+                // 第一步：去掉受影响组中的关键字，得到基础关键字
+                var cleanKeywords = new List<string>();
+                foreach (string kw in baseKeywords)
+                {
+                    if (!allAffectedKeywords.Contains(kw))
+                        cleanKeywords.Add(kw);
+                }
+                cleanKeywords.Sort();
+
+                // 第二步：用受影响组的关键字重新排列组合
+                // 生成所有组的笛卡尔积
+                var combinations = GenerateGroupCombinations(affectedGroups);
+
+                foreach (var combo in combinations)
+                {
+                    var finalKeywords = new List<string>(cleanKeywords);
+                    finalKeywords.AddRange(combo);
+                    finalKeywords.Sort();
+
+                    shaderInfo.ShaderVariantElements.Add(new ShaderVariantCollectionManifest.ShaderVariantElement
+                    {
+                        PassType = passType,
+                        Keywords = finalKeywords.ToArray()
+                    });
+                    shaderInfo.ShaderVariantCount++;
+                    addedCount++;
+                }
+            }
+        }
+
+        if (addedCount > 0)
+        {
+            wrapper.VariantTotalCount += addedCount;
+            Debug.Log($"[全局关键字注入] 重新组合了 {addedCount} 个变种");
+        }
+    }
+
+    /// <summary>
+    /// 生成多个 multi_compile 组的笛卡尔积
+    /// 每组取一个关键字（包括空，表示不启用该组的任何关键字）
+    /// </summary>
+    private static List<List<string>> GenerateGroupCombinations(List<HashSet<string>> groups)
+    {
+        var result = new List<List<string>>();
+        GenerateGroupCombinationsRecursive(groups, 0, new List<string>(), result);
+        return result;
+    }
+
+    private static void GenerateGroupCombinationsRecursive(List<HashSet<string>> groups, int index, List<string> current, List<List<string>> result)
+    {
+        if (index >= groups.Count)
+        {
+            if (current.Count > 0)
+                result.Add(new List<string>(current));
+            return;
+        }
+
+        // 不选该组的任何关键字
+        GenerateGroupCombinationsRecursive(groups, index + 1, current, result);
+
+        // 选该组的每个关键字
+        foreach (string kw in groups[index])
+        {
+            current.Add(kw);
+            GenerateGroupCombinationsRecursive(groups, index + 1, current, result);
+            current.RemoveAt(current.Count - 1);
+        }
+    }
+
+    /// <summary>
+    /// 从 shader 源码解析 #pragma multi_compile 声明的互斥关键字组
+    /// </summary>
+    private static List<HashSet<string>> GetMultiCompileGroups(string shaderPath)
+    {
+        var groups = new List<HashSet<string>>();
+        if (string.IsNullOrEmpty(shaderPath) || !File.Exists(shaderPath))
+            return groups;
+
+        try
+        {
+            string source = File.ReadAllText(shaderPath);
+            // 匹配 #pragma multi_compile 和 #pragma shader_feature 开头的行
+            var lines = source.Split('\n');
+            foreach (string line in lines)
+            {
+                string trimmed = line.Trim();
+                if (trimmed.StartsWith("#pragma multi_compile") || trimmed.StartsWith("#pragma shader_feature"))
+                {
+                    string[] parts = trimmed.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                    // 跳过 "multi_compile" 或 "shader_feature" 本身，以及 "multi_compile_local" 等变体
+                    var keywords = new HashSet<string>();
+                    for (int i = 1; i < parts.Length; i++)
+                    {
+                        string kw = parts[i].Trim();
+                        if (!string.IsNullOrEmpty(kw) && kw != "_" && !kw.StartsWith("multi_compile") && !kw.StartsWith("shader_feature"))
+                        {
+                            keywords.Add(kw);
+                        }
+                    }
+                    if (keywords.Count > 1)
+                    {
+                        groups.Add(keywords);
+                    }
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[全局关键字注入] 解析 shader 源码失败: {shaderPath}, {e.Message}");
+        }
+
+        return groups;
+    }
+
+    /// <summary>
+    /// 获取 shader 源码中声明支持的所有关键字
+    /// </summary>
+    private static HashSet<string> GetShaderSupportedKeywords(string shaderPath)
+    {
+        var keywords = new HashSet<string>();
+        if (string.IsNullOrEmpty(shaderPath) || !File.Exists(shaderPath))
+            return keywords;
+
+        try
+        {
+            string source = File.ReadAllText(shaderPath);
+            var lines = source.Split('\n');
+            foreach (string line in lines)
+            {
+                string trimmed = line.Trim();
+                if (trimmed.StartsWith("#pragma multi_compile") || trimmed.StartsWith("#pragma shader_feature"))
+                {
+                    string[] parts = trimmed.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                    for (int i = 1; i < parts.Length; i++)
+                    {
+                        string kw = parts[i].Trim();
+                        if (!string.IsNullOrEmpty(kw) && kw != "_")
+                        {
+                            keywords.Add(kw);
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[全局关键字注入] 读取 shader 失败: {shaderPath}, {e.Message}");
+        }
+
+        return keywords;
+    }
 
     public static HashSet<string> GetAlwaysIncludedShaderNames()
     {
