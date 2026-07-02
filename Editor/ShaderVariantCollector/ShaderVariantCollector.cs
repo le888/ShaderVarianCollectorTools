@@ -1402,7 +1402,7 @@ public static class ShaderVariantCollector
                 }
 
                 // 收集 Pass 内的 Tags
-                if (passStartLine >= 0 && trimmed.StartsWith("LightMode"))
+                if (passStartLine >= 0 && (trimmed.StartsWith("LightMode") || trimmed.StartsWith("\"LightMode\"")))
                 {
                     // 格式: "LightMode" = "ForwardBase"
                     int eqIdx = trimmed.IndexOf('=');
@@ -1526,7 +1526,7 @@ public static class ShaderVariantCollector
                     }
                 }
 
-                if (passStartDepth >= 0 && trimmed.StartsWith("LightMode"))
+                if (passStartDepth >= 0 && (trimmed.StartsWith("LightMode") || trimmed.StartsWith("\"LightMode\"")))
                 {
                     int eqIdx = trimmed.IndexOf('=');
                     if (eqIdx >= 0)
