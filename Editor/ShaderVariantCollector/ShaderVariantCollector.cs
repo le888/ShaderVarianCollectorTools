@@ -238,17 +238,13 @@ public static class ShaderVariantCollector
                 foreach (var group in passGroups)
                     passGroupKeywords.UnionWith(group);
 
-                // 非组关键字（shader_feature 等）只加到主 pass（第一个有 multi_compile 组的 pass）
-                // ShadowCaster/DepthOnly/Meta 等 pass 不支持这些关键字
+                // 非组关键字：只加该 pass 源码中实际声明的关键字（shader_feature 等）
+                var passAllKeywords = GetPassDeclaredKeywords(shaderPath, passInfo.Name);
                 var passNonGroupKeywords = new List<string>();
-                if (isFirstPass && passGroups.Count > 0)
+                foreach (string kw in allEnabledKeywords)
                 {
-                    foreach (string kw in allEnabledKeywords)
-                    {
-                        if (!passGroupKeywords.Contains(kw))
-                            passNonGroupKeywords.Add(kw);
-                    }
-                    isFirstPass = false;
+                    if (!passGroupKeywords.Contains(kw) && passAllKeywords.Contains(kw))
+                        passNonGroupKeywords.Add(kw);
                 }
                 passNonGroupKeywords.Sort();
 
@@ -1550,6 +1546,88 @@ public static class ShaderVariantCollector
         }
 
         return passTypes;
+    }
+
+    /// <summary>
+    /// 解析指定 pass 块中声明的所有关键字（multi_compile + shader_feature）
+    /// </summary>
+    private static HashSet<string> GetPassDeclaredKeywords(string shaderPath, string passName)
+    {
+        var keywords = new HashSet<string>();
+        if (string.IsNullOrEmpty(shaderPath) || !File.Exists(shaderPath))
+            return keywords;
+
+        try
+        {
+            string source = File.ReadAllText(shaderPath);
+            var lines = source.Split('\n');
+            int braceDepth = 0;
+            bool waitingPassBrace = false;
+            int passStartDepth = -1;
+            string currentPassName = null;
+            bool inTargetPass = false;
+
+            foreach (string line in lines)
+            {
+                string trimmed = line.Trim();
+
+                if (trimmed.StartsWith("//"))
+                    continue;
+
+                if (trimmed == "Pass" || trimmed == "Pass {")
+                {
+                    waitingPassBrace = true;
+                    passStartDepth = -1;
+                    currentPassName = null;
+                    inTargetPass = false;
+                }
+
+                foreach (char c in line)
+                {
+                    if (c == '{')
+                    {
+                        braceDepth++;
+                        if (waitingPassBrace)
+                        {
+                            passStartDepth = braceDepth;
+                            waitingPassBrace = false;
+                        }
+                    }
+                    else if (c == '}')
+                    {
+                        braceDepth--;
+                        if (passStartDepth >= 0 && braceDepth < passStartDepth)
+                        {
+                            passStartDepth = -1;
+                            inTargetPass = false;
+                        }
+                    }
+                }
+
+                // 检测 pass 名称
+                if (passStartDepth >= 0 && trimmed.StartsWith("Name "))
+                {
+                    currentPassName = trimmed.Substring(5).Trim().Trim('"');
+                    if (currentPassName == passName || passName == null)
+                        inTargetPass = true;
+                }
+
+                // 在目标 pass 中收集关键字声明
+                if (inTargetPass && (trimmed.StartsWith("#pragma multi_compile") || trimmed.StartsWith("#pragma shader_feature")))
+                {
+                    string[] parts = trimmed.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                    for (int i = 1; i < parts.Length; i++)
+                    {
+                        string kw = parts[i].Trim();
+                        if (!string.IsNullOrEmpty(kw) && kw != "_" && !kw.StartsWith("multi_compile") && !kw.StartsWith("shader_feature"))
+                            keywords.Add(kw);
+                    }
+                }
+            }
+        }
+        catch { }
+
+        return keywords;
     }
 
     // passType 值来自渲染收集的 SVC 文件（与 Unity PassType 枚举不一致）
