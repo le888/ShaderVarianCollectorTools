@@ -252,37 +252,38 @@ public static class ShaderVariantCollector
             var baseKeywords = new List<string>(nonGroupKeywords);
             baseKeywords.Sort();
 
-            // 使用 shader 的实际 passType
-            PassType mainPassType = shaderPassTypes[0];
-
-            if (combinations.Count == 0)
+            // 为每个 pass 生成变种
+            foreach (var passType in shaderPassTypes)
             {
-                // 没有 multi_compile 组，只用基础关键字
-                shaderInfo.ShaderVariantElements.Add(new ShaderVariantCollectionManifest.ShaderVariantElement
+                if (combinations.Count == 0)
                 {
-                    PassType = mainPassType,
-                    Keywords = baseKeywords.ToArray()
-                });
-            }
-            else
-            {
-                // 每个组合生成一个变种
-                foreach (var combo in combinations)
-                {
-                    var finalKeywords = new List<string>(baseKeywords);
-                    foreach (string kw in combo)
-                    {
-                        string trimmed = kw.Trim();
-                        if (!string.IsNullOrEmpty(trimmed))
-                            finalKeywords.Add(trimmed);
-                    }
-                    finalKeywords.Sort();
-
+                    // 没有 multi_compile 组，只用基础关键字
                     shaderInfo.ShaderVariantElements.Add(new ShaderVariantCollectionManifest.ShaderVariantElement
                     {
-                        PassType = mainPassType,
-                        Keywords = finalKeywords.ToArray()
+                        PassType = passType,
+                        Keywords = baseKeywords.ToArray()
                     });
+                }
+                else
+                {
+                    // 每个组合生成一个变种
+                    foreach (var combo in combinations)
+                    {
+                        var finalKeywords = new List<string>(baseKeywords);
+                        foreach (string kw in combo)
+                        {
+                            string trimmed = kw.Trim();
+                            if (!string.IsNullOrEmpty(trimmed))
+                                finalKeywords.Add(trimmed);
+                        }
+                        finalKeywords.Sort();
+
+                        shaderInfo.ShaderVariantElements.Add(new ShaderVariantCollectionManifest.ShaderVariantElement
+                        {
+                            PassType = passType,
+                            Keywords = finalKeywords.ToArray()
+                        });
+                    }
                 }
             }
 
