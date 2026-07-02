@@ -820,11 +820,7 @@ public static class ShaderVariantCollector
                 if (processGroups.Count > 0)
                     passGroupsMap[passInfo.PassType] = processGroups;
             }
-            }
 
-            if (processGroups.Count == 0) continue;
-
-            // 收集所有需要处理的组关键字
             // 收集已有变种（快照）
             var existingVariants = new List<(PassType passType, string[] keywords)>();
             foreach (var variant in shaderInfo.ShaderVariantElements)
