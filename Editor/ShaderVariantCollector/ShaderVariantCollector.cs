@@ -776,8 +776,9 @@ public static class ShaderVariantCollector
     
 
     /// <summary>
-    /// 向 manifest 中注入 multi_compile 变种，按 pass 区分
-    /// 策略：按 pass 解析 multi_compile 组，每个变种只用自己 pass 的组来排列组合
+    /// 向 manifest 中注入 multi_compile 变种
+    /// 策略：解析 shader 中所有 multi_compile 组，去掉组关键字得到基础变种，再重新排列组合
+    /// 无组关键字的变种（如 ShadowCaster）直接保留
     /// </summary>
     private static void AddGlobalKeywordVariantsToManifest(ShaderVariantCollectionManifest wrapper, List<string> excludeKeywords)
     {
@@ -787,39 +788,37 @@ public static class ShaderVariantCollector
         foreach (var shaderInfo in wrapper.ShaderVariantInfos)
         {
             string shaderPath = shaderInfo.AssetPath;
-            List<PassInfo> passInfos = GetMultiCompileGroupsByPass(shaderPath);
+            List<HashSet<string>> allGroups = GetMultiCompileGroups(shaderPath);
             HashSet<string> shaderGlobalKeywords = GetShaderSupportedKeywords(shaderPath);
 
-            // 为每个 pass 过滤组
-            var passGroupsMap = new Dictionary<PassType, List<HashSet<string>>>();
-            foreach (var passInfo in passInfos)
+            // 过滤掉包含排除关键字的组，并裁剪每组只保留 shader 实际支持的关键字
+            var processGroups = new List<HashSet<string>>();
+            foreach (var group in allGroups)
             {
-                var processGroups = new List<HashSet<string>>();
-                foreach (var group in passInfo.Groups)
+                bool excluded = false;
+                foreach (string kw in group)
                 {
-                    bool excluded = false;
-                    foreach (string kw in group)
+                    if (excludeSet.Contains(kw))
                     {
-                        if (excludeSet.Contains(kw))
-                        {
-                            excluded = true;
-                            break;
-                        }
+                        excluded = true;
+                        break;
                     }
-                    if (excluded) continue;
-
-                    var filtered = new HashSet<string>();
-                    foreach (string kw in group)
-                    {
-                        if (shaderGlobalKeywords.Contains(kw))
-                            filtered.Add(kw);
-                    }
-                    if (filtered.Count > 1)
-                        processGroups.Add(filtered);
                 }
-                if (processGroups.Count > 0)
-                    passGroupsMap[passInfo.PassType] = processGroups;
+                if (excluded) continue;
+
+                var filtered = new HashSet<string>();
+                foreach (string kw in group)
+                {
+                    if (shaderGlobalKeywords.Contains(kw))
+                        filtered.Add(kw);
+                }
+                if (filtered.Count > 1)
+                    processGroups.Add(filtered);
             }
+
+            var allGroupKeywords = new HashSet<string>();
+            foreach (var group in processGroups)
+                allGroupKeywords.UnionWith(group);
 
             // 收集已有变种（快照）
             var existingVariants = new List<(PassType passType, string[] keywords)>();
@@ -835,38 +834,6 @@ public static class ShaderVariantCollector
 
             foreach (var (passType, baseKeywords) in existingVariants)
             {
-                // 获取当前 pass 的组，如果没有则保留原始变种
-                if (!passGroupsMap.TryGetValue(passType, out var processGroups))
-                {
-                    // 该 pass 没有 multi_compile 组，保留原始变种
-                    var cleanKw = new List<string>();
-                    foreach (string kw in baseKeywords)
-                    {
-                        string trimmed = kw.Trim();
-                        if (!string.IsNullOrEmpty(trimmed))
-                            cleanKw.Add(trimmed);
-                    }
-                    cleanKw.Sort();
-                    string key = $"{(int)passType}|{string.Join(" ", cleanKw)}";
-                    if (!seenVariants.Contains(key))
-                    {
-                        seenVariants.Add(key);
-                        shaderInfo.ShaderVariantElements.Add(new ShaderVariantCollectionManifest.ShaderVariantElement
-                        {
-                            PassType = passType,
-                            Keywords = cleanKw.ToArray()
-                        });
-                        shaderInfo.ShaderVariantCount++;
-                        addedCount++;
-                    }
-                    continue;
-                }
-
-                // 当前 pass 的组关键字集合
-                var allGroupKeywords = new HashSet<string>();
-                foreach (var group in processGroups)
-                    allGroupKeywords.UnionWith(group);
-
                 // 第一步：去掉组中的关键字，得到基础关键字（trim 并过滤空串）
                 var cleanKeywords = new List<string>();
                 foreach (string kw in baseKeywords)
@@ -877,7 +844,7 @@ public static class ShaderVariantCollector
                 }
                 cleanKeywords.Sort();
 
-                // 检查原始变种是否包含当前 pass 的组关键字
+                // 检查原始变种是否包含组关键字
                 bool hasGroupKeyword = false;
                 foreach (string kw in baseKeywords)
                 {
@@ -888,7 +855,7 @@ public static class ShaderVariantCollector
                     }
                 }
 
-                // 如果当前变种没有该 pass 的组关键字，直接保留原始
+                // 如果当前变种没有组关键字（如 ShadowCaster），直接保留原始
                 if (!hasGroupKeyword)
                 {
                     string key = $"{(int)passType}|{string.Join(" ", cleanKeywords)}";
@@ -990,6 +957,45 @@ public static class ShaderVariantCollector
             GenerateGroupCombinationsRecursive(groups, index + 1, current, result);
             current.RemoveAt(current.Count - 1);
         }
+    }
+
+    /// <summary>
+    /// 从 shader 源码解析所有 #pragma multi_compile 声明的互斥关键字组（不区分 pass）
+    /// </summary>
+    private static List<HashSet<string>> GetMultiCompileGroups(string shaderPath)
+    {
+        var groups = new List<HashSet<string>>();
+        if (string.IsNullOrEmpty(shaderPath) || !File.Exists(shaderPath))
+            return groups;
+
+        try
+        {
+            string source = File.ReadAllText(shaderPath);
+            var lines = source.Split('\n');
+            foreach (string line in lines)
+            {
+                string trimmed = line.Trim();
+                if (trimmed.StartsWith("//")) continue;
+                if (!trimmed.StartsWith("#pragma multi_compile")) continue;
+
+                string[] parts = trimmed.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                var keywords = new HashSet<string>();
+                for (int i = 1; i < parts.Length; i++)
+                {
+                    string kw = parts[i].Trim();
+                    if (!string.IsNullOrEmpty(kw) && kw != "_" && !kw.StartsWith("multi_compile"))
+                        keywords.Add(kw);
+                }
+                if (keywords.Count > 1)
+                    groups.Add(keywords);
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[multi_compile] 解析 shader 源码失败: {shaderPath}, {e.Message}");
+        }
+
+        return groups;
     }
 
     private struct PassInfo
@@ -1110,15 +1116,19 @@ public static class ShaderVariantCollector
     {
         switch (lightMode)
         {
+            case "UniversalForward":
             case "ForwardBase": return PassType.ForwardBase;
             case "ForwardAdd": return PassType.ForwardAdd;
             case "Deferred": return PassType.Deferred;
             case "ShadowCaster": return PassType.ShadowCaster;
+            case "Universal2D": return PassType.Vertex; // URP 2D
+            case "DepthOnly": return (PassType)12;
+            case "DepthNormals": return (PassType)13;
             case "MotionVectors": return PassType.MotionVectors;
+            case "Meta": return (PassType)4;
             case "Vertex": return PassType.Vertex;
             case "VertexLMRGBM": return PassType.VertexLMRGBM;
             case "VertexLM": return PassType.VertexLM;
-            case "Meta": return (PassType)4;
             default: return PassType.ForwardBase;
         }
     }
