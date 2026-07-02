@@ -853,6 +853,24 @@ public static class ShaderVariantCollector
                 // 第二步：用所有组的关键字重新排列组合（笛卡尔积）
                 var combinations = GenerateGroupCombinations(processGroups);
 
+                // 没有组合时保留原始变种（如 ShadowCaster 无 multi_compile 关键字）
+                if (combinations.Count == 0)
+                {
+                    string key = $"{(int)passType}|{string.Join(" ", cleanKeywords)}";
+                    if (!seenVariants.Contains(key))
+                    {
+                        seenVariants.Add(key);
+                        shaderInfo.ShaderVariantElements.Add(new ShaderVariantCollectionManifest.ShaderVariantElement
+                        {
+                            PassType = passType,
+                            Keywords = cleanKeywords.ToArray()
+                        });
+                        shaderInfo.ShaderVariantCount++;
+                        addedCount++;
+                    }
+                    continue;
+                }
+
                 foreach (var combo in combinations)
                 {
                     var finalKeywords = new List<string>(cleanKeywords);
