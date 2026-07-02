@@ -1513,19 +1513,22 @@ public static class ShaderVariantCollector
         switch (lightMode)
         {
             case "UniversalForward":
+            case "UniversalForwardOnly":
+            case "UniversalGBuffer":
+            case "DepthOnly":
+            case "DepthNormals":
+            case "Universal2D":
+                return PassType.ScriptableRenderPipeline; // 11 - URP 自定义 pass 统一用此值
             case "ForwardBase": return PassType.ForwardBase;
             case "ForwardAdd": return PassType.ForwardAdd;
             case "Deferred": return PassType.Deferred;
             case "ShadowCaster": return PassType.ShadowCaster;
-            case "Universal2D": return PassType.Vertex; // URP 2D
-            case "DepthOnly": return (PassType)12;
-            case "DepthNormals": return (PassType)13;
+            case "Meta": return PassType.Meta;
             case "MotionVectors": return PassType.MotionVectors;
-            case "Meta": return (PassType)4;
             case "Vertex": return PassType.Vertex;
             case "VertexLMRGBM": return PassType.VertexLMRGBM;
             case "VertexLM": return PassType.VertexLM;
-            default: return PassType.ForwardBase;
+            default: return PassType.ScriptableRenderPipeline;
         }
     }
 
