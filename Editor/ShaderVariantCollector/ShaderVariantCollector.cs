@@ -221,15 +221,14 @@ public static class ShaderVariantCollector
                 }
                 if (excluded) continue;
 
-                // 只保留材质中实际启用的关键字（不添加未启用的）
+                // 保留组中所有 shader 支持的关键字（包括材质未启用的，用于预热）
                 var filtered = new HashSet<string>();
                 foreach (string kw in group)
                 {
-                    if (allEnabledKeywords.Contains(kw))
+                    if (shaderGlobalKeywords.Contains(kw))
                         filtered.Add(kw);
                 }
-                // 至少有两个关键字才需要排列组合（单个关键字已在材质中确定）
-                if (filtered.Count >= 1)
+                if (filtered.Count > 1)
                     processGroups.Add(filtered);
             }
 
@@ -316,8 +315,7 @@ public static class ShaderVariantCollector
             ShaderVariantInfos = allVariantInfos
         };
 
-        // 分析模式已自行处理 multi_compile 排列组合，不再调用 AddGlobalKeywordVariantsToManifest
-        // 写入文件
+        // 分析模式：直接通过 SerializedObject 写入 SVC（变种未编译，ShaderVariant 验证会失败）
         int totalVariants = 0;
 
         if (splitByShaderName)
@@ -327,51 +325,36 @@ public static class ShaderVariantCollector
                 Shader shader = AssetDatabase.LoadAssetAtPath<Shader>(info.AssetPath);
                 if (shader == null) { debugLog.AppendLine($"  [跳过] shader 未找到: {info.AssetPath}"); continue; }
 
-                var variants = new List<ShaderVariantCollection.ShaderVariant>();
-                foreach (var v in info.ShaderVariantElements)
-                {
-                    try
-                    {
-                        variants.Add(new ShaderVariantCollection.ShaderVariant(shader, v.PassType, v.Keywords));
-                    }
-                    catch (ArgumentException ex)
-                    {
-                        debugLog.AppendLine($"  [验证失败] {info.ShaderName} pass={v.PassType} kw=[{string.Join(", ", v.Keywords)}] → {ex.Message}");
-                    }
-                }
-                debugLog.AppendLine($"  [写入] {info.ShaderName}: {info.ShaderVariantElements.Count} 个变种, 有效 {variants.Count} 个");
-
                 string basePath = Path.GetDirectoryName(savePath);
                 string shaderName = info.ShaderName.Replace('/', '_').Replace('\\', '_');
                 string shaderSavePath = Path.Combine(basePath, $"{shaderName}.shadervariants");
-                WriteShaderVariantFile(shaderSavePath, shader, variants);
-                totalVariants += variants.Count;
+                debugLog.AppendLine($"  [写入] {info.ShaderName}: {info.ShaderVariantElements.Count} 个变种 → {shaderSavePath}");
+                foreach (var v in info.ShaderVariantElements)
+                    debugLog.AppendLine($"    pass={v.PassType} kw=[{string.Join(", ", v.Keywords)}]");
+
+                WriteShaderVariantFileRaw(shaderSavePath, shader, info);
+                totalVariants += info.ShaderVariantElements.Count;
             }
         }
         else
         {
-            var allVariants = new List<ShaderVariantCollection.ShaderVariant>();
+            var mergedInfo = new ShaderVariantCollectionManifest.ShaderVariantInfo
+            {
+                AssetPath = wrapper.ShaderVariantInfos.Count > 0 ? wrapper.ShaderVariantInfos[0].AssetPath : "",
+                ShaderName = wrapper.ShaderVariantInfos.Count > 0 ? wrapper.ShaderVariantInfos[0].ShaderName : "",
+            };
             foreach (var info in wrapper.ShaderVariantInfos)
-            {
-                Shader shader = AssetDatabase.LoadAssetAtPath<Shader>(info.AssetPath);
-                if (shader == null) continue;
-                foreach (var v in info.ShaderVariantElements)
-                {
-                    try { allVariants.Add(new ShaderVariantCollection.ShaderVariant(shader, v.PassType, v.Keywords)); }
-                    catch (ArgumentException ex)
-                    {
-                        debugLog.AppendLine($"  [验证失败] {info.ShaderName} pass={v.PassType} kw=[{string.Join(", ", v.Keywords)}] → {ex.Message}");
-                    }
-                }
-            }
-            debugLog.AppendLine($"  [写入] 合并: {allVariants.Count} 个有效变种 → {savePath}");
+                mergedInfo.ShaderVariantElements.AddRange(info.ShaderVariantElements);
+            mergedInfo.ShaderVariantCount = mergedInfo.ShaderVariantElements.Count;
 
-            if (allVariants.Count > 0)
-            {
-                Shader firstShader = AssetDatabase.LoadAssetAtPath<Shader>(wrapper.ShaderVariantInfos[0].AssetPath);
-                WriteShaderVariantFile(savePath, firstShader, allVariants);
-            }
-            totalVariants = allVariants.Count;
+            debugLog.AppendLine($"  [写入] 合并: {mergedInfo.ShaderVariantCount} 个变种 → {savePath}");
+            foreach (var v in mergedInfo.ShaderVariantElements)
+                debugLog.AppendLine($"    pass={v.PassType} kw=[{string.Join(", ", v.Keywords)}]");
+
+            Shader firstShader = AssetDatabase.LoadAssetAtPath<Shader>(mergedInfo.AssetPath);
+            if (firstShader != null)
+                WriteShaderVariantFileRaw(savePath, firstShader, mergedInfo);
+            totalVariants = mergedInfo.ShaderVariantCount;
         }
 
         // 保存 debug 日志
