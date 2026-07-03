@@ -149,18 +149,47 @@ public class ShaderVariantCollectorWindow : EditorWindow
 
         EditorGUILayout.Space(10);
 
-        GUI.backgroundColor = new Color(0.24f, 0.65f, 0.25f);
-        if (GUILayout.Button("开始搜集", GUILayout.Height(50)))
+        // 收集按钮（带进度和取消功能）
+        if (ShaderVariantCollector.IsCollecting)
         {
-            // 延迟到当前 GUI 布局结束后执行，避免 Run() 中的场景操作打断布局
-            EditorApplication.delayCall += CollectButton_clicked;
+            // 收集中：显示进度条和取消按钮
+            float progress = ShaderVariantCollector.GetAnalyzeProgress();
+            string status = ShaderVariantCollector.GetAnalyzeStatus();
+
+            // 进度条背景
+            var rect = GUILayoutUtility.GetRect(GUIContent.none, GUIStyle.none, GUILayout.Height(50));
+            EditorGUI.DrawRect(rect, new Color(0.2f, 0.2f, 0.2f));
+
+            // 进度条填充
+            var fillRect = new Rect(rect.x, rect.y, rect.width * progress, rect.height);
+            EditorGUI.DrawRect(fillRect, new Color(0.9f, 0.6f, 0.1f));
+
+            // 按钮文字
+            string btnText = string.IsNullOrEmpty(status) ? "收集中... 点击取消" : $"{status} 点击取消";
+            if (GUI.Button(rect, btnText))
+            {
+                ShaderVariantCollector.Cancel();
+            }
         }
-        GUI.backgroundColor = Color.white;
+        else
+        {
+            // 未收集：正常按钮
+            GUI.backgroundColor = new Color(0.24f, 0.65f, 0.25f);
+            if (GUILayout.Button("开始搜集", GUILayout.Height(50)))
+            {
+                EditorApplication.delayCall += CollectButton_clicked;
+            }
+            GUI.backgroundColor = Color.white;
+        }
 
         EditorGUILayout.EndScrollView();
 
         // 绘制结束后统一应用变更
         ApplyPendingChanges();
+
+        // 收集中持续刷新窗口
+        if (ShaderVariantCollector.IsCollecting)
+            Repaint();
     }
 
     private void ApplyPendingChanges()

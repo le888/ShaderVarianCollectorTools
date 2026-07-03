@@ -57,6 +57,26 @@ public static class ShaderVariantCollector
     private static string _currentPackageName = "Default";
 
     private static ESteps _steps = ESteps.None;
+    public static bool IsCollecting => _steps != ESteps.None || _analyzeRunning;
+    private static bool _analyzeRunning = false;
+    private static bool _cancelRequested = false;
+    private static float _analyzeProgress = 0f;
+    private static string _analyzeStatus = "";
+
+    public static void Cancel()
+    {
+        _cancelRequested = true;
+    }
+
+    public static float GetAnalyzeProgress()
+    {
+        return _analyzeProgress;
+    }
+
+    public static string GetAnalyzeStatus()
+    {
+        return _analyzeStatus;
+    }
     private static Stopwatch _elapsedTime;
     private static List<MaterialInfo> _allMaterials;
     private static List<MaterialInfo> _rangeMt;
@@ -124,8 +144,13 @@ public static class ShaderVariantCollector
     /// </summary>
     public static void RunAnalyze(string savePath, string searchPath, List<string> blackPath, string[] filterShaderName, bool splitByShaderName, string packageName = "Default")
     {
-        if (_steps != ESteps.None)
+        if (_steps != ESteps.None || _analyzeRunning)
             return;
+
+        _analyzeRunning = true;
+        _cancelRequested = false;
+        _analyzeProgress = 0f;
+        _analyzeStatus = "初始化";
 
         if (Path.HasExtension(savePath) == false)
             savePath = $"{savePath}.shadervariants";
@@ -155,9 +180,13 @@ public static class ShaderVariantCollector
         string[] materialGuids = AssetDatabase.FindAssets("t:Material", new[] { searchPath });
         int skipped = 0;
 
-        foreach (string guid in materialGuids)
+        for (int mi = 0; mi < materialGuids.Length; mi++)
         {
-            string path = AssetDatabase.GUIDToAssetPath(guid);
+            if (_cancelRequested) { debugLog.AppendLine("[取消] 用户取消收集"); break; }
+
+            string path = AssetDatabase.GUIDToAssetPath(materialGuids[mi]);
+            _analyzeProgress = (float)mi / materialGuids.Length * 0.3f;
+            _analyzeStatus = $"扫描材质 {mi + 1}/{materialGuids.Length}";
             if (IsBlackPath(path, blackSet)) { skipped++; continue; }
 
             Material mat = AssetDatabase.LoadAssetAtPath<Material>(path);
@@ -193,11 +222,17 @@ public static class ShaderVariantCollector
         // 2. 为每个 shader 生成变种
         var allVariantInfos = new List<ShaderVariantCollectionManifest.ShaderVariantInfo>();
 
+        int shaderIndex = 0;
         foreach (var kvp in shaderMaterials)
         {
+            if (_cancelRequested) { debugLog.AppendLine("[取消] 用户取消收集"); break; }
+
             Shader shader = kvp.Key;
             var materialKeywords = kvp.Value;
             string shaderPath = AssetDatabase.GetAssetPath(shader);
+            _analyzeProgress = 0.3f + (float)shaderIndex / shaderMaterials.Count * 0.7f;
+            _analyzeStatus = $"分析 shader {shaderIndex + 1}/{shaderMaterials.Count}: {shader.name}";
+            shaderIndex++;
 
             // 按 pass 解析 multi_compile 组，只收集用户选择的 pass type
             bool isShaderGraph = shaderPath.EndsWith(".shadergraph") || shaderPath.EndsWith(".shadersubgraph");
@@ -438,6 +473,9 @@ public static class ShaderVariantCollector
         Debug.Log($"[分析模式] 完成: {wrapper.ShaderVariantInfos.Count} 个 shader, {totalVariants} 个变种");
 
         _steps = ESteps.None;
+        _analyzeRunning = false;
+        _analyzeProgress = 0f;
+        _analyzeStatus = "";
     }
 
     private static bool IsBlackPath(string path, HashSet<string> blackSet)
