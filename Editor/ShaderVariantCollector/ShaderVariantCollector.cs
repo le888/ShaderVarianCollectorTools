@@ -121,6 +121,7 @@ public static class ShaderVariantCollector
     
     private static List<string> _allScene;
     private static Scene _currentScene;
+    private static int _totalMaterialCount = 0;
 
 
     /// <summary>
@@ -603,6 +604,8 @@ public static class ShaderVariantCollector
 
         if (_steps == ESteps.Prepare)
         {
+            _analyzeProgress = 0f;
+            _analyzeStatus = "准备中";
             ShaderVariantCollectionHelper.ClearCurrentShaderVariantCollection();
             _steps = ESteps.CollectAllMaterial;
             return; //等待一帧
@@ -610,13 +613,19 @@ public static class ShaderVariantCollector
 
         if (_steps == ESteps.CollectAllMaterial)
         {
+            _analyzeProgress = 0.05f;
+            _analyzeStatus = "扫描材质";
             _allMaterials = GetAllMaterials();
+            _analyzeProgress = 0.1f;
+            _analyzeStatus = $"扫描完成: {_allMaterials.Count} 个材质";
             _steps = ESteps.CollectAllScene;
             return; //等待一帧
         }
 
         if (_steps == ESteps.CollectAllScene)
         {
+            _analyzeProgress = 0.12f;
+            _analyzeStatus = "扫描场景";
             if (_collectSceneVariants)
             {
                 _allScene = GetAllScenes(_scenePath);
@@ -627,6 +636,7 @@ public static class ShaderVariantCollector
                 _allScene = new List<string>();
                 _steps = ESteps.CollectVariants;
             }
+            _totalMaterialCount = _allMaterials.Count;
             return; //等待一帧
         }
 
@@ -642,6 +652,11 @@ public static class ShaderVariantCollector
             _lastVariantCount = ShaderVariantCollectionHelper.GetCurrentShaderVariantCollectionVariantCount();
             _stableSince = 0f;
 
+            // 更新进度
+            int processedCount = _totalMaterialCount - _allMaterials.Count;
+            _analyzeProgress = 0.15f + 0.7f * processedCount / Mathf.Max(1, _totalMaterialCount);
+            _analyzeStatus = $"收集变种 {processedCount}/{_totalMaterialCount}";
+
             if (_allMaterials.Count > 0)
             {
                 _elapsedTime = Stopwatch.StartNew();
@@ -656,6 +671,7 @@ public static class ShaderVariantCollector
 
         if (_steps == ESteps.CollectWaitToScene)
         {
+            _analyzeStatus = "等待变种稳定";
             if (IsSVCStable())
             {
                 DestroyAllSpheres();
@@ -666,6 +682,9 @@ public static class ShaderVariantCollector
 
         if (_steps == ESteps.CollectSleeping)
         {
+            int processedCount = _totalMaterialCount - _allMaterials.Count;
+            _analyzeProgress = 0.15f + 0.7f * processedCount / Mathf.Max(1, _totalMaterialCount);
+            _analyzeStatus = $"编译变种 {processedCount}/{_totalMaterialCount}";
             if (IsSVCStable())
             {
                 DestroyAllSpheres();
@@ -676,6 +695,8 @@ public static class ShaderVariantCollector
 
         if (_steps == ESteps.CollectSceneSleeping)
         {
+            _analyzeProgress = 0.85f;
+            _analyzeStatus = "收集场景变种";
             if (_elapsedTime.ElapsedMilliseconds > SleepSceneMilliseconds)
             {
                 DestoryLoadScene();
@@ -693,10 +714,14 @@ public static class ShaderVariantCollector
             if (_allScene.Count == 0)
             {
                 DestoryLoadScene();
+                _analyzeProgress = 0.9f;
+                _analyzeStatus = "保存中";
                 _steps = ESteps.WaitingDone;
             }
             else
             {
+                _analyzeProgress = 0.85f;
+                _analyzeStatus = "收集场景变种";
                 var scenePath = _allScene[0];
                 _allScene.RemoveAt(0);
                 //加载场景
@@ -708,11 +733,12 @@ public static class ShaderVariantCollector
         }
         if (_steps == ESteps.WaitingDone)
         {
+            _analyzeProgress = 0.95f;
+            _analyzeStatus = "保存变种集";
             // 注意：一定要延迟保存才会起效
             if (_elapsedTime.ElapsedMilliseconds > WaitMilliseconds)
             {
                 _elapsedTime.Stop();
-                _steps = ESteps.None;
 
                 // 保存结果并创建清单
                 SaveShaderVariantCollection();
@@ -720,6 +746,9 @@ public static class ShaderVariantCollector
 
                 Debug.Log($"搜集SVC完毕！");
                 EditorApplication.update -= EditorUpdate;
+                _steps = ESteps.None;
+                _analyzeProgress = 0f;
+                _analyzeStatus = "";
                 _completedCallback?.Invoke();
             }
         }
