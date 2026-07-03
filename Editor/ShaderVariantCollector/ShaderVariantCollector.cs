@@ -1283,8 +1283,8 @@ public static class ShaderVariantCollector
 
         if (index >= groups.Count)
         {
-            if (current.Count > 0)
-                result.Add(new List<string>(current));
+            // 保留空组合（_ 默认状态：不启用任何组关键字）
+            result.Add(new List<string>(current));
             return;
         }
 
