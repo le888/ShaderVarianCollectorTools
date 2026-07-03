@@ -15,17 +15,18 @@ MonoBehaviour:
   fileName: MyShaderVariants.shadervariants
   fileSavePath: Assets/Scenes/vs
   processCapacity: 1000
-  fileSearchPath: Assets
+  fileSearchPath: Assets/MTTest
   sceneSearchPath: Assets
   blackPaths: []
   splitByShaderName: 1
   collectSceneVariants: 0
   saveJsonFile: 0
-  globalKeywords: []
+  globalKeywords:
+  - LIGHTMAP_ON
   localKeywordsCollection:
-    LocalKeywords:
-    - ShaderName: RO/PBRLit
-      Keyword: _ALPHATEST_ON
-  filterShaderNames:
-  - Universal Render Pipeline/Lit
-  maxVariantsPerFile: 0
+    LocalKeywords: []
+  filterShaderNames: []
+  maxVariantsPerFile: 1
+  saveDebugRawSVC: 1
+  analyzeMode: 0
+  selectedPassTypes: 080000000d000000
