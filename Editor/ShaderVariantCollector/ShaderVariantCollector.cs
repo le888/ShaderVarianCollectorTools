@@ -311,6 +311,7 @@ public static class ShaderVariantCollector
         // 分析模式：直接通过 SerializedObject 写入 SVC（变种未编译，ShaderVariant 验证会失败）
         int totalVariants = 0;
         int maxVariantsPerFile = ShaderVariantCollectorSetting.GetMaxVariantsPerFile(packageName);
+        var shaderNamesSave = new List<string>();
 
         // 清理旧文件
         if (splitByShaderName)
@@ -338,6 +339,7 @@ public static class ShaderVariantCollector
                 {
                     // 不拆分
                     string shaderSavePath = Path.Combine(basePath, $"{shaderName}.shadervariants");
+                    shaderNamesSave.Add(shaderName);
                     debugLog.AppendLine($"  [写入] {info.ShaderName}: {info.ShaderVariantElements.Count} 个变种 → {shaderSavePath}");
                     WriteShaderVariantFileRaw(shaderSavePath, shader, info);
                 }
@@ -369,6 +371,7 @@ public static class ShaderVariantCollector
                             chunk.ShaderVariantCount = count;
 
                             string shaderSavePath = Path.Combine(basePath, $"{shaderName}_{fileIndex}.shadervariants");
+                            shaderNamesSave.Add($"{shaderName}_{fileIndex}");
                             debugLog.AppendLine($"  [写入] {info.ShaderName}_{fileIndex}: pass={kvp.Key} {count} 个变种 → {shaderSavePath}");
                             WriteShaderVariantFileRaw(shaderSavePath, shader, chunk);
                             fileIndex++;
@@ -396,6 +399,16 @@ public static class ShaderVariantCollector
             if (firstShader != null)
                 WriteShaderVariantFileRaw(savePath, firstShader, mergedInfo);
             totalVariants = mergedInfo.ShaderVariantCount;
+        }
+
+        // 保存 shader 名称列表
+        if (splitByShaderName && shaderNamesSave.Count > 0)
+        {
+            string basePath = Path.GetDirectoryName(savePath);
+            string baseName = Path.GetFileNameWithoutExtension(savePath);
+            string shaderNamesPath = Path.Combine(basePath, $"{baseName}_shaderNames.txt");
+            File.WriteAllLines(shaderNamesPath, shaderNamesSave);
+            debugLog.AppendLine($"  [shaderNames] {shaderNamesPath}");
         }
 
         // 保存 debug 日志
