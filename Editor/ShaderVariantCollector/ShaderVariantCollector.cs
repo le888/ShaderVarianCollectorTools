@@ -386,12 +386,14 @@ public static class ShaderVariantCollector
 
         if (splitByShaderName)
         {
+            string basePath = Path.GetDirectoryName(savePath);
+
             foreach (var info in wrapper.ShaderVariantInfos)
             {
+                // 在清理后加载 shader，避免 AssetDatabase.Refresh 导致引用失效
                 Shader shader = AssetDatabase.LoadAssetAtPath<Shader>(info.AssetPath);
                 if (shader == null) { debugLog.AppendLine($"  [跳过] shader 未找到: {info.AssetPath}"); continue; }
 
-                string basePath = Path.GetDirectoryName(savePath);
                 string shaderName = info.ShaderName.Replace('/', '_').Replace('\\', '_');
 
                 if (maxVariantsPerFile <= 0 || info.ShaderVariantElements.Count <= maxVariantsPerFile)
@@ -400,9 +402,7 @@ public static class ShaderVariantCollector
                     string shaderSavePath = Path.Combine(basePath, $"{shaderName}.shadervariants");
                     shaderNamesSave.Add(shaderName);
                     debugLog.AppendLine($"  [写入] {info.ShaderName}: {info.ShaderVariantElements.Count} 个变种 → {shaderSavePath}");
-                    debugLog.AppendLine($"    shader={shader.name}, elements={info.ShaderVariantElements.Count}");
                     WriteShaderVariantFileRaw(shaderSavePath, shader, info);
-                    debugLog.AppendLine($"    写入完成");
                 }
                 else
                 {
@@ -1199,7 +1199,6 @@ public static class ShaderVariantCollector
     /// </summary>
     private static void WriteShaderVariantFileRaw(string savePath, Shader shader, ShaderVariantCollectionManifest.ShaderVariantInfo info)
     {
-        Debug.Log($"[WriteShaderVariantFileRaw] {savePath}: shader={shader?.name}, variants={info.ShaderVariantElements.Count}");
         ShaderVariantCollection svc = new ShaderVariantCollection();
         AssetDatabase.CreateAsset(svc, savePath);
 
@@ -1228,24 +1227,6 @@ public static class ShaderVariantCollector
 
         EditorUtility.SetDirty(svc);
         AssetDatabase.SaveAssets();
-
-        // 验证写入结果
-        var verify = AssetDatabase.LoadAssetAtPath<ShaderVariantCollection>(savePath);
-        if (verify != null)
-        {
-            using (var so2 = new SerializedObject(verify))
-            {
-                var arr = so2.FindProperty("m_Shaders.Array");
-                int total = 0;
-                for (int i = 0; i < arr.arraySize; i++)
-                    total += arr.GetArrayElementAtIndex(i).FindPropertyRelative("second.variants")?.arraySize ?? 0;
-                Debug.Log($"[WriteShaderVariantFileRaw] 验证 {savePath}: {total} 个变种");
-            }
-        }
-        else
-        {
-            Debug.LogWarning($"[WriteShaderVariantFileRaw] 验证失败: 文件未找到 {savePath}");
-        }
     }
 
     /// <summary>
