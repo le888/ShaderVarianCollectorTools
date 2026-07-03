@@ -53,6 +53,7 @@ public class ShaderVariantCollectorSetting : ScriptableObject
     public int maxVariantsPerFile = 5;
     public bool saveDebugRawSVC = false;
     public bool analyzeMode = false;
+    public List<int> selectedPassTypes = new List<int> { 8, 13 }; // 默认 ShadowCaster + UniversalForward
 
     // Get/Set 方法
     public static string GetFileName(string packageName)
@@ -254,6 +255,21 @@ public class ShaderVariantCollectorSetting : ScriptableObject
     {
         ShaderVariantCollectorSetting settings = GetSettings();
         settings.analyzeMode = value;
+        SaveSettings(settings);
+    }
+
+    public static List<int> GetSelectedPassTypes(string packageName)
+    {
+        var list = GetSettings().selectedPassTypes;
+        if (list == null || list.Count == 0)
+            return new List<int> { 8, 13 };
+        return list;
+    }
+
+    public static void SetSelectedPassTypes(string packageName, List<int> value)
+    {
+        ShaderVariantCollectorSetting settings = GetSettings();
+        settings.selectedPassTypes = value ?? new List<int> { 8, 13 };
         SaveSettings(settings);
     }
 }

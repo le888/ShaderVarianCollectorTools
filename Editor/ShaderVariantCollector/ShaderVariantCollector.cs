@@ -193,13 +193,13 @@ public static class ShaderVariantCollector
             var materialKeywords = kvp.Value;
             string shaderPath = AssetDatabase.GetAssetPath(shader);
 
-            // 按 pass 解析 multi_compile 组，跳过不需要收集的 pass
+            // 按 pass 解析 multi_compile 组，只收集用户选择的 pass type
             var allPassInfos = GetMultiCompileGroupsByPass(shaderPath);
-            var skipPassTypes = new HashSet<PassType> { (PassType)9, (PassType)16, (PassType)17, PassType.GrabPass };
+            var selectedPassTypes = new HashSet<int>(ShaderVariantCollectorSetting.GetSelectedPassTypes(packageName));
             var passInfos = new List<PassInfo>();
             foreach (var p in allPassInfos)
             {
-                if (!skipPassTypes.Contains(p.PassType))
+                if (selectedPassTypes.Contains((int)p.PassType))
                     passInfos.Add(p);
             }
             debugLog.AppendLine($"  [pass解析] {shader.name}: {allPassInfos.Count} 个 pass, 收集 {passInfos.Count} 个");

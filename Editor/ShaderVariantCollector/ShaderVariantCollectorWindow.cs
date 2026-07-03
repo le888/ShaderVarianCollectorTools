@@ -62,6 +62,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
         _pendingMaxVariantsPerFile = -1;
         _pendingSaveDebugRawSVC = null;
         _pendingAnalyzeMode = null;
+        _pendingSelectedPassTypes = null;
         _pendingRemoveBlackIndex = -1;
         _pendingRemoveFilterIndex = -1;
         _pendingRemoveLocalIndex = -1;
@@ -139,6 +140,12 @@ public class ShaderVariantCollectorWindow : EditorWindow
         if (newDebugRaw != debugRaw)
             _pendingSaveDebugRawSVC = newDebugRaw;
 
+        // Pass Type 选择器（仅分析模式可见）
+        if (analyzeMode || newAnalyzeMode)
+        {
+            DrawPassTypeSelector();
+        }
+
         EditorGUILayout.Space(10);
 
         GUI.backgroundColor = new Color(0.24f, 0.65f, 0.25f);
@@ -179,6 +186,8 @@ public class ShaderVariantCollectorWindow : EditorWindow
             ShaderVariantCollectorSetting.SetSaveDebugRawSVC(_currentPackageName, _pendingSaveDebugRawSVC.Value);
         if (_pendingAnalyzeMode.HasValue)
             ShaderVariantCollectorSetting.SetAnalyzeMode(_currentPackageName, _pendingAnalyzeMode.Value);
+        if (_pendingSelectedPassTypes != null)
+            ShaderVariantCollectorSetting.SetSelectedPassTypes(_currentPackageName, _pendingSelectedPassTypes);
 
         // 列表删除
         if (_pendingRemoveBlackIndex >= 0)
@@ -451,6 +460,51 @@ public class ShaderVariantCollectorWindow : EditorWindow
         }
         EditorGUI.indentLevel--;
     }
+
+    // 已知的 URP pass type 定义
+    private static readonly (int value, string name)[] KnownPassTypes = new[]
+    {
+        (13, "UniversalForward"),
+        (8, "ShadowCaster"),
+        (15, "DepthOnly"),
+        (14, "UniversalGBuffer"),
+        (10, "MotionVectors"),
+    };
+
+    private bool _showPassTypes = false;
+
+    private void DrawPassTypeSelector()
+    {
+        var selected = ShaderVariantCollectorSetting.GetSelectedPassTypes(_currentPackageName);
+        var selectedSet = new HashSet<int>(selected);
+
+        _showPassTypes = EditorGUILayout.Foldout(_showPassTypes, "收集的 Pass Type", true);
+        if (!_showPassTypes) return;
+
+        EditorGUI.indentLevel++;
+        bool changed = false;
+
+        foreach (var (value, name) in KnownPassTypes)
+        {
+            bool wasSelected = selectedSet.Contains(value);
+            bool newSelected = EditorGUILayout.Toggle($"  {name} ({value})", wasSelected);
+            if (newSelected != wasSelected)
+            {
+                if (newSelected) selectedSet.Add(value);
+                else selectedSet.Remove(value);
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            _pendingSelectedPassTypes = new List<int>(selectedSet);
+        }
+
+        EditorGUI.indentLevel--;
+    }
+
+    private List<int> _pendingSelectedPassTypes;
 
     private void CollectButton_clicked()
     {
