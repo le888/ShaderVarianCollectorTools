@@ -1317,7 +1317,7 @@ public static class ShaderVariantCollector
             foreach (string line in lines)
             {
                 string trimmed = line.Trim();
-                if (trimmed.StartsWith("//")) continue;
+                if (IsCommentLine(trimmed)) continue;
                 if (!trimmed.StartsWith("#pragma multi_compile")) continue;
 
                 string[] parts = trimmed.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
@@ -1437,7 +1437,7 @@ public static class ShaderVariantCollector
         for (int i = startLine; i <= endLine; i++)
         {
             string trimmed = lines[i].Trim();
-            if (trimmed.StartsWith("//")) continue; // 跳过注释
+            if (IsCommentLine(trimmed)) continue;
             if (!trimmed.StartsWith("#pragma multi_compile")) continue;
 
             string[] parts = trimmed.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
@@ -1492,7 +1492,7 @@ public static class ShaderVariantCollector
                 lineNum++;
                 string trimmed = line.Trim();
 
-                if (trimmed.StartsWith("//"))
+                if (IsCommentLine(trimmed))
                     continue;
 
                 if (trimmed == "Pass" || trimmed == "Pass {")
@@ -1577,7 +1577,7 @@ public static class ShaderVariantCollector
             {
                 string trimmed = line.Trim();
 
-                if (trimmed.StartsWith("//"))
+                if (IsCommentLine(trimmed))
                     continue;
 
                 if (trimmed == "Pass" || trimmed == "Pass {")
@@ -1634,6 +1634,18 @@ public static class ShaderVariantCollector
         catch { }
 
         return keywords;
+    }
+
+    /// <summary>
+    /// 检查行是否是注释（// 在 #pragma 之前）
+    /// </summary>
+    private static bool IsCommentLine(string trimmed)
+    {
+        if (trimmed.StartsWith("//")) return true;
+        int commentIdx = trimmed.IndexOf("//");
+        int pragmaIdx = trimmed.IndexOf("#pragma");
+        if (commentIdx >= 0 && (pragmaIdx < 0 || commentIdx < pragmaIdx)) return true;
+        return false;
     }
 
     // passType 值来自渲染收集的 SVC 文件（与 Unity PassType 枚举不一致）
