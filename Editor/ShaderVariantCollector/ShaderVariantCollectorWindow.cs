@@ -149,37 +149,33 @@ public class ShaderVariantCollectorWindow : EditorWindow
 
         EditorGUILayout.Space(10);
 
-        // 收集按钮（带进度和取消功能）
+        // 收集按钮
+        GUI.backgroundColor = ShaderVariantCollector.IsCollecting ? new Color(0.9f, 0.6f, 0.1f) : new Color(0.24f, 0.65f, 0.25f);
+        string buttonText = ShaderVariantCollector.IsCollecting ? "取消搜集" : "开始搜集";
+        if (GUILayout.Button(buttonText, GUILayout.Height(50)))
+        {
+            if (ShaderVariantCollector.IsCollecting)
+                ShaderVariantCollector.Cancel();
+            else
+                EditorApplication.delayCall += CollectButton_clicked;
+        }
+        GUI.backgroundColor = Color.white;
+
+        // 进度条（收集中显示）
         if (ShaderVariantCollector.IsCollecting)
         {
-            // 收集中：显示进度条和取消按钮
             float progress = ShaderVariantCollector.GetAnalyzeProgress();
             string status = ShaderVariantCollector.GetAnalyzeStatus();
 
-            // 进度条背景
-            var rect = GUILayoutUtility.GetRect(GUIContent.none, GUIStyle.none, GUILayout.Height(50));
+            // 状态文字
+            EditorGUILayout.LabelField(status, EditorStyles.miniLabel);
+
+            // 进度条
+            var rect = GUILayoutUtility.GetRect(GUIContent.none, GUIStyle.none, GUILayout.Height(18));
             EditorGUI.DrawRect(rect, new Color(0.2f, 0.2f, 0.2f));
-
-            // 进度条填充
-            var fillRect = new Rect(rect.x, rect.y, rect.width * progress, rect.height);
+            var fillRect = new Rect(rect.x, rect.y, rect.width * Mathf.Clamp01(progress), rect.height);
             EditorGUI.DrawRect(fillRect, new Color(0.9f, 0.6f, 0.1f));
-
-            // 按钮文字
-            string btnText = string.IsNullOrEmpty(status) ? "收集中... 点击取消" : $"{status} 点击取消";
-            if (GUI.Button(rect, btnText))
-            {
-                ShaderVariantCollector.Cancel();
-            }
-        }
-        else
-        {
-            // 未收集：正常按钮
-            GUI.backgroundColor = new Color(0.24f, 0.65f, 0.25f);
-            if (GUILayout.Button("开始搜集", GUILayout.Height(50)))
-            {
-                EditorApplication.delayCall += CollectButton_clicked;
-            }
-            GUI.backgroundColor = Color.white;
+            EditorGUI.LabelField(rect, $"{Mathf.RoundToInt(progress * 100)}%", new GUIStyle(EditorStyles.miniLabel) { alignment = TextAnchor.MiddleCenter });
         }
 
         EditorGUILayout.EndScrollView();
