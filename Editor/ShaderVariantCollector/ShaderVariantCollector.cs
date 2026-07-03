@@ -164,12 +164,17 @@ public static class ShaderVariantCollector
             if (mat == null || mat.shader == null) { skipped++; continue; }
             if (filterSet.Contains(mat.shader.name)) { skipped++; continue; }
 
-            // 收集材质启用的有效关键字（过滤掉 shader 中已注释/移除的无效关键字）
-            var shaderDeclaredKeywords = GetShaderSupportedKeywords(AssetDatabase.GetAssetPath(mat.shader));
+            // 收集材质启用的关键字
+            // 普通 shader：过滤掉源码中已注释/移除的无效关键字
+            // Shader Graph：无源码可解析，直接使用材质关键字
             var enabledKeywords = new HashSet<string>();
+            string shaderPath = AssetDatabase.GetAssetPath(mat.shader);
+            bool isShaderGraph = shaderPath.EndsWith(".shadergraph") || shaderPath.EndsWith(".shadersubgraph");
+            var shaderDeclaredKeywords = isShaderGraph ? null : GetShaderSupportedKeywords(shaderPath);
             foreach (var kw in mat.shaderKeywords)
             {
-                if (!string.IsNullOrEmpty(kw) && shaderDeclaredKeywords.Contains(kw))
+                if (string.IsNullOrEmpty(kw)) continue;
+                if (shaderDeclaredKeywords == null || shaderDeclaredKeywords.Contains(kw))
                     enabledKeywords.Add(kw);
             }
 
@@ -195,19 +200,36 @@ public static class ShaderVariantCollector
             string shaderPath = AssetDatabase.GetAssetPath(shader);
 
             // 按 pass 解析 multi_compile 组，只收集用户选择的 pass type
-            var allPassInfos = GetMultiCompileGroupsByPass(shaderPath);
-            var selectedPassTypes = new HashSet<int>(ShaderVariantCollectorSetting.GetSelectedPassTypes(packageName));
-            var passInfos = new List<PassInfo>();
-            foreach (var p in allPassInfos)
+            bool isShaderGraph = shaderPath.EndsWith(".shadergraph") || shaderPath.EndsWith(".shadersubgraph");
+            List<PassInfo> passInfos;
+
+            if (isShaderGraph)
             {
-                if (selectedPassTypes.Contains((int)p.PassType))
-                    passInfos.Add(p);
+                // Shader Graph：无源码可解析，用默认 pass 直接收集材质关键字
+                debugLog.AppendLine($"  [Shader Graph] {shader.name}: 跳过 pass 解析，直接收集材质关键字");
+                var selectedPassTypes = ShaderVariantCollectorSetting.GetSelectedPassTypes(packageName);
+                var defaultPassType = selectedPassTypes.Count > 0 ? (PassType)selectedPassTypes[0] : (PassType)13;
+                passInfos = new List<PassInfo>
+                {
+                    new PassInfo { Name = "ShaderGraph", PassType = defaultPassType, Groups = new List<HashSet<string>>() }
+                };
             }
-            debugLog.AppendLine($"  [pass解析] {shader.name}: {allPassInfos.Count} 个 pass, 收集 {passInfos.Count} 个");
-            if (passInfos.Count == 0)
+            else
             {
-                debugLog.AppendLine($"  [跳过] {shader.name}: 无法解析 pass");
-                continue;
+                var allPassInfos = GetMultiCompileGroupsByPass(shaderPath);
+                var selectedPassTypes = new HashSet<int>(ShaderVariantCollectorSetting.GetSelectedPassTypes(packageName));
+                passInfos = new List<PassInfo>();
+                foreach (var p in allPassInfos)
+                {
+                    if (selectedPassTypes.Contains((int)p.PassType))
+                        passInfos.Add(p);
+                }
+                debugLog.AppendLine($"  [pass解析] {shader.name}: {allPassInfos.Count} 个 pass, 收集 {passInfos.Count} 个");
+                if (passInfos.Count == 0)
+                {
+                    debugLog.AppendLine($"  [跳过] {shader.name}: 无法解析 pass");
+                    continue;
+                }
             }
 
             // 收集该 shader 所有材质中启用的关键字
