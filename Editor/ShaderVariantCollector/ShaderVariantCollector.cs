@@ -88,6 +88,12 @@ public static class ShaderVariantCollector
     private static bool _scanSplitByShaderName;
     private static string _scanPackageName;
 
+    // 异步变种生成状态
+    private static List<KeyValuePair<Shader, List<HashSet<string>>>> _genShaderList;
+    private static int _genIndex = 0;
+    private static HashSet<string> _genExcludeKeywords;
+    private static List<ShaderVariantCollectionManifest.ShaderVariantInfo> _genVariantInfos;
+
     public static void Cancel()
     {
         _cancelRequested = true;
@@ -271,31 +277,47 @@ public static class ShaderVariantCollector
     }
 
     /// <summary>
-    /// 扫描完成后：生成变种 + 构建写入队列 + 启动异步写入
+    /// 扫描完成后：启动异步变种生成
     /// </summary>
     private static void AnalyzeGenerateAndWrite()
     {
-        var excludeKeywords = new HashSet<string>(ShaderVariantCollectorSetting.GetGlobalKeywords(_scanPackageName));
-        var allVariantInfos = new List<ShaderVariantCollectionManifest.ShaderVariantInfo>();
+        _genExcludeKeywords = new HashSet<string>(ShaderVariantCollectorSetting.GetGlobalKeywords(_scanPackageName));
+        _genShaderList = new List<KeyValuePair<Shader, List<HashSet<string>>>>(_scanShaderMaterials);
+        _genIndex = 0;
+        _genVariantInfos = new List<ShaderVariantCollectionManifest.ShaderVariantInfo>();
 
-        int shaderIndex = 0;
-        foreach (var kvp in _scanShaderMaterials)
+        _analyzeProgress = 0.3f;
+        _analyzeStatus = $"分析 shader 0/{_genShaderList.Count}";
+        EditorApplication.update += AnalyzeGenerateUpdate;
+    }
+
+    /// <summary>
+    /// 异步生成变种（每帧处理一个 shader）
+    /// </summary>
+    private static void AnalyzeGenerateUpdate()
+    {
+        if (_cancelRequested)
         {
-            if (_cancelRequested) { _scanDebugLog.AppendLine("[取消] 用户取消收集"); break; }
+            EditorApplication.update -= AnalyzeGenerateUpdate;
+            _analyzeRunning = false;
+            _analyzeProgress = 0f;
+            _analyzeStatus = "";
+            return;
+        }
 
+        // 每帧处理一个 shader
+        if (_genIndex < _genShaderList.Count)
+        {
+            var kvp = _genShaderList[_genIndex];
             Shader shader = kvp.Key;
             var materialKeywords = kvp.Value;
             string shaderPath = AssetDatabase.GetAssetPath(shader);
-            _analyzeProgress = 0.3f + (float)shaderIndex / _scanShaderMaterials.Count * 0.2f;
-            _analyzeStatus = $"分析 shader {shaderIndex + 1}/{_scanShaderMaterials.Count}: {shader.name}";
-            shaderIndex++;
 
             bool isShaderGraph = shaderPath.EndsWith(".shadergraph") || shaderPath.EndsWith(".shadersubgraph");
             List<PassInfo> passInfos;
 
             if (isShaderGraph)
             {
-                _scanDebugLog.AppendLine($"  [Shader Graph] {shader.name}: 跳过 pass 解析，直接收集材质关键字");
                 var selectedPassTypes = ShaderVariantCollectorSetting.GetSelectedPassTypes(_scanPackageName);
                 var defaultPassType = selectedPassTypes.Contains(13) ? (PassType)13 : (selectedPassTypes.Count > 0 ? (PassType)selectedPassTypes[0] : (PassType)13);
                 passInfos = new List<PassInfo>
@@ -313,85 +335,103 @@ public static class ShaderVariantCollector
                     if (selectedPassTypes.Contains((int)p.PassType))
                         passInfos.Add(p);
                 }
-                if (passInfos.Count == 0) continue;
             }
 
-            var allEnabledKeywords = new HashSet<string>();
-            foreach (var kwSet in materialKeywords)
-                allEnabledKeywords.UnionWith(kwSet);
-
-            var shaderInfo = new ShaderVariantCollectionManifest.ShaderVariantInfo
+            if (passInfos.Count > 0)
             {
-                AssetPath = shaderPath,
-                ShaderName = shader.name,
-            };
+                var allEnabledKeywords = new HashSet<string>();
+                foreach (var kwSet in materialKeywords)
+                    allEnabledKeywords.UnionWith(kwSet);
 
-            foreach (var passInfo in passInfos)
-            {
-                var passGroups = new List<HashSet<string>>();
-                foreach (var group in passInfo.Groups)
+                var shaderInfo = new ShaderVariantCollectionManifest.ShaderVariantInfo
                 {
-                    bool excluded = false;
-                    foreach (string kw in group)
+                    AssetPath = shaderPath,
+                    ShaderName = shader.name,
+                };
+
+                foreach (var passInfo in passInfos)
+                {
+                    var passGroups = new List<HashSet<string>>();
+                    foreach (var group in passInfo.Groups)
                     {
-                        if (excludeKeywords.Contains(kw)) { excluded = true; break; }
-                    }
-                    if (excluded) continue;
-                    if (group.Count >= 1)
-                        passGroups.Add(new HashSet<string>(group));
-                }
-
-                var passGroupKeywords = new HashSet<string>();
-                foreach (var group in passGroups)
-                    passGroupKeywords.UnionWith(group);
-
-                var passNonGroupKeywords = new List<string>();
-                foreach (string kw in allEnabledKeywords)
-                {
-                    if (!passGroupKeywords.Contains(kw))
-                        passNonGroupKeywords.Add(kw);
-                }
-                passNonGroupKeywords.Sort();
-
-                var passCombinations = GenerateGroupCombinations(passGroups);
-
-                if (passCombinations.Count == 0)
-                {
-                    shaderInfo.ShaderVariantElements.Add(new ShaderVariantCollectionManifest.ShaderVariantElement
-                    {
-                        PassType = passInfo.PassType,
-                        Keywords = passNonGroupKeywords.ToArray()
-                    });
-                }
-                else
-                {
-                    foreach (var combo in passCombinations)
-                    {
-                        var finalKeywords = new List<string>(passNonGroupKeywords);
-                        foreach (string kw in combo)
+                        bool excluded = false;
+                        foreach (string kw in group)
                         {
-                            string trimmed = kw.Trim();
-                            if (!string.IsNullOrEmpty(trimmed))
-                                finalKeywords.Add(trimmed);
+                            if (_genExcludeKeywords.Contains(kw)) { excluded = true; break; }
                         }
-                        finalKeywords.Sort();
+                        if (excluded) continue;
+                        if (group.Count >= 1)
+                            passGroups.Add(new HashSet<string>(group));
+                    }
 
+                    var passGroupKeywords = new HashSet<string>();
+                    foreach (var group in passGroups)
+                        passGroupKeywords.UnionWith(group);
+
+                    var passNonGroupKeywords = new List<string>();
+                    foreach (string kw in allEnabledKeywords)
+                    {
+                        if (!passGroupKeywords.Contains(kw))
+                            passNonGroupKeywords.Add(kw);
+                    }
+                    passNonGroupKeywords.Sort();
+
+                    var passCombinations = GenerateGroupCombinations(passGroups);
+
+                    if (passCombinations.Count == 0)
+                    {
                         shaderInfo.ShaderVariantElements.Add(new ShaderVariantCollectionManifest.ShaderVariantElement
                         {
                             PassType = passInfo.PassType,
-                            Keywords = finalKeywords.ToArray()
+                            Keywords = passNonGroupKeywords.ToArray()
                         });
                     }
+                    else
+                    {
+                        foreach (var combo in passCombinations)
+                        {
+                            var finalKeywords = new List<string>(passNonGroupKeywords);
+                            foreach (string kw in combo)
+                            {
+                                string trimmed = kw.Trim();
+                                if (!string.IsNullOrEmpty(trimmed))
+                                    finalKeywords.Add(trimmed);
+                            }
+                            finalKeywords.Sort();
+
+                            shaderInfo.ShaderVariantElements.Add(new ShaderVariantCollectionManifest.ShaderVariantElement
+                            {
+                                PassType = passInfo.PassType,
+                                Keywords = finalKeywords.ToArray()
+                            });
+                        }
+                    }
                 }
+
+                shaderInfo.ShaderVariantCount = shaderInfo.ShaderVariantElements.Count;
+                _genVariantInfos.Add(shaderInfo);
+                Debug.Log($"[分析模式] {shader.name}: {shaderInfo.ShaderVariantCount} 个变种");
             }
 
-            shaderInfo.ShaderVariantCount = shaderInfo.ShaderVariantElements.Count;
-            allVariantInfos.Add(shaderInfo);
-            Debug.Log($"[分析模式] {shader.name}: {shaderInfo.ShaderVariantCount} 个变种");
+            _genIndex++;
+            _analyzeProgress = 0.3f + 0.2f * _genIndex / _genShaderList.Count;
+            _analyzeStatus = $"分析 shader {_genIndex}/{_genShaderList.Count}: {shader.name}";
         }
 
-        // 构建写入队列
-        var wrapper = new ShaderVariantCollectionManifest { ShaderVariantInfos = allVariantInfos };
+        if (_genIndex >= _genShaderList.Count)
+        {
+            // 生成完成，构建写入队列
+            EditorApplication.update -= AnalyzeGenerateUpdate;
+            AnalyzeBuildWriteQueue();
+        }
+    }
+
+    /// <summary>
+    /// 生成完成后构建写入队列并启动异步写入
+    /// </summary>
+    private static void AnalyzeBuildWriteQueue()
+    {
+        var wrapper = new ShaderVariantCollectionManifest { ShaderVariantInfos = _genVariantInfos };
         int maxVariantsPerFile = ShaderVariantCollectorSetting.GetMaxVariantsPerFile(_scanPackageName);
         _writeQueue = new List<(string, Shader, ShaderVariantCollectionManifest.ShaderVariantInfo)>();
         _writeShaderNames = new List<string>();
@@ -465,7 +505,6 @@ public static class ShaderVariantCollector
             _writeTotalVariants = mergedInfo.ShaderVariantCount;
         }
 
-        // 启动异步批量写入
         _writeIndex = 0;
         _analyzeProgress = 0.5f;
         _analyzeStatus = $"写入变种 0/{_writeQueue.Count}";
