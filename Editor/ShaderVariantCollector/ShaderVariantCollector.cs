@@ -63,6 +63,18 @@ public static class ShaderVariantCollector
     private static float _analyzeProgress = 0f;
     private static string _analyzeStatus = "";
 
+    // 异步写入状态
+    private const int WriteBatchSize = 5;
+    private static List<(string path, Shader shader, ShaderVariantCollectionManifest.ShaderVariantInfo info)> _writeQueue;
+    private static int _writeIndex = 0;
+    private static int _writeTotal = 0;
+    private static List<string> _writeShaderNames;
+    private static string _writeSavePath;
+    private static System.Text.StringBuilder _writeDebugLog;
+    private static bool _writeDebugRaw;
+    private static ShaderVariantCollectionManifest _writeWrapper;
+    private static int _writeTotalVariants;
+
     public static void Cancel()
     {
         _cancelRequested = true;
@@ -367,10 +379,15 @@ public static class ShaderVariantCollector
             ShaderVariantInfos = allVariantInfos
         };
 
-        // 分析模式：直接通过 SerializedObject 写入 SVC（变种未编译，ShaderVariant 验证会失败）
-        int totalVariants = 0;
+        // 构建写入队列
         int maxVariantsPerFile = ShaderVariantCollectorSetting.GetMaxVariantsPerFile(packageName);
-        var shaderNamesSave = new List<string>();
+        _writeQueue = new List<(string, Shader, ShaderVariantCollectionManifest.ShaderVariantInfo)>();
+        _writeShaderNames = new List<string>();
+        _writeSavePath = savePath;
+        _writeDebugLog = debugLog;
+        _writeDebugRaw = debugRaw;
+        _writeWrapper = wrapper;
+        _writeTotalVariants = 0;
 
         // 清理旧文件
         if (splitByShaderName)
@@ -381,6 +398,136 @@ public static class ShaderVariantCollector
                 Directory.Delete(basePath, true);
                 Directory.CreateDirectory(basePath);
             }
+            AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
+        }
+
+        if (splitByShaderName)
+        {
+            string basePath = Path.GetDirectoryName(savePath);
+
+            foreach (var info in wrapper.ShaderVariantInfos)
+            {
+                Shader shader = AssetDatabase.LoadAssetAtPath<Shader>(info.AssetPath);
+                if (shader == null) { debugLog.AppendLine($"  [跳过] shader 未找到: {info.AssetPath}"); continue; }
+
+                string shaderName = info.ShaderName.Replace('/', '_').Replace('\\', '_');
+
+                if (maxVariantsPerFile <= 0 || info.ShaderVariantElements.Count <= maxVariantsPerFile)
+                {
+                    string shaderSavePath = Path.Combine(basePath, $"{shaderName}.shadervariants");
+                    _writeShaderNames.Add(shaderName);
+                    _writeQueue.Add((shaderSavePath, shader, info));
+                }
+                else
+                {
+                    int fileIndex = 0;
+                    for (int offset = 0; offset < info.ShaderVariantElements.Count; offset += maxVariantsPerFile)
+                    {
+                        int count = Mathf.Min(maxVariantsPerFile, info.ShaderVariantElements.Count - offset);
+                        var chunk = new ShaderVariantCollectionManifest.ShaderVariantInfo
+                        {
+                            AssetPath = info.AssetPath,
+                            ShaderName = info.ShaderName,
+                            ShaderVariantElements = info.ShaderVariantElements.GetRange(offset, count)
+                        };
+                        chunk.ShaderVariantCount = count;
+
+                        string shaderSavePath = Path.Combine(basePath, $"{shaderName}_{fileIndex}.shadervariants");
+                        _writeShaderNames.Add($"{shaderName}_{fileIndex}");
+                        _writeQueue.Add((shaderSavePath, shader, chunk));
+                        fileIndex++;
+                    }
+                }
+
+                _writeTotalVariants += info.ShaderVariantElements.Count;
+            }
+        }
+        else
+        {
+            var mergedInfo = new ShaderVariantCollectionManifest.ShaderVariantInfo
+            {
+                AssetPath = wrapper.ShaderVariantInfos.Count > 0 ? wrapper.ShaderVariantInfos[0].AssetPath : "",
+                ShaderName = wrapper.ShaderVariantInfos.Count > 0 ? wrapper.ShaderVariantInfos[0].ShaderName : "",
+            };
+            foreach (var info in wrapper.ShaderVariantInfos)
+                mergedInfo.ShaderVariantElements.AddRange(info.ShaderVariantElements);
+            mergedInfo.ShaderVariantCount = mergedInfo.ShaderVariantElements.Count;
+
+            Shader firstShader = AssetDatabase.LoadAssetAtPath<Shader>(mergedInfo.AssetPath);
+            if (firstShader != null)
+                _writeQueue.Add((savePath, firstShader, mergedInfo));
+            _writeTotalVariants = mergedInfo.ShaderVariantCount;
+        }
+
+        // 开始异步批量写入
+        _writeIndex = 0;
+        _analyzeStatus = $"写入变种 0/{_writeQueue.Count}";
+        EditorApplication.update += AnalyzeWriteUpdate;
+    }
+
+    private static void AnalyzeWriteUpdate()
+    {
+        if (_cancelRequested)
+        {
+            Debug.Log("[分析模式] 用户取消写入");
+            EditorApplication.update -= AnalyzeWriteUpdate;
+            _analyzeRunning = false;
+            _analyzeProgress = 0f;
+            _analyzeStatus = "";
+            return;
+        }
+
+        int batchEnd = Mathf.Min(_writeIndex + WriteBatchSize, _writeQueue.Count);
+
+        for (int i = _writeIndex; i < batchEnd; i++)
+        {
+            var (path, shader, info) = _writeQueue[i];
+            WriteShaderVariantFileRaw(path, shader, info);
+        }
+
+        // 每批保存一次
+        AssetDatabase.SaveAssets();
+
+        _writeIndex = batchEnd;
+        _analyzeProgress = (float)_writeIndex / _writeQueue.Count;
+        _analyzeStatus = $"写入变种 {_writeIndex}/{_writeQueue.Count}";
+
+        if (_writeIndex >= _writeQueue.Count)
+        {
+            // 写入完成
+            EditorApplication.update -= AnalyzeWriteUpdate;
+
+            // 保存 shader 名称列表
+            if (_writeShaderNames.Count > 0)
+            {
+                string basePath = Path.GetDirectoryName(_writeSavePath);
+                string baseName = Path.GetFileNameWithoutExtension(_writeSavePath);
+                string shaderNamesPath = Path.Combine(basePath, $"{baseName}_shaderNames.txt");
+                File.WriteAllLines(shaderNamesPath, _writeShaderNames);
+            }
+
+            // 保存 debug 日志
+            if (_writeDebugRaw)
+            {
+                string debugDir = Path.GetDirectoryName(Path.GetDirectoryName(_writeSavePath));
+                string debugPath = Path.Combine(debugDir, "debug", "debug.txt");
+                EditorTools.CreateFileDirectory(debugPath);
+                _writeDebugLog.AppendLine();
+                _writeDebugLog.AppendLine($"完成: {_writeWrapper.ShaderVariantInfos.Count} 个 shader, {_writeTotalVariants} 个变种");
+                File.WriteAllText(debugPath, _writeDebugLog.ToString());
+                Debug.Log($"[分析模式] Debug 日志: {debugPath}");
+            }
+
+            AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
+            Debug.Log($"[分析模式] 完成: {_writeQueue.Count} 个文件, {_writeTotalVariants} 个变种");
+
+            _writeQueue = null;
+            _steps = ESteps.None;
+            _analyzeRunning = false;
+            _analyzeProgress = 0f;
+            _analyzeStatus = "";
+        }
+    }
             AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
         }
 
