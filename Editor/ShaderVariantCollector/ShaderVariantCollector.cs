@@ -331,23 +331,36 @@ public static class ShaderVariantCollector
                 }
                 else
                 {
-                    // 按数量拆分
-                    int fileIndex = 0;
-                    for (int offset = 0; offset < info.ShaderVariantElements.Count; offset += maxVariantsPerFile)
+                    // 按 pass 分组，每组独立拆分
+                    var passGroups = new Dictionary<int, List<ShaderVariantCollectionManifest.ShaderVariantElement>>();
+                    foreach (var v in info.ShaderVariantElements)
                     {
-                        int count = Mathf.Min(maxVariantsPerFile, info.ShaderVariantElements.Count - offset);
-                        var chunk = new ShaderVariantCollectionManifest.ShaderVariantInfo
-                        {
-                            AssetPath = info.AssetPath,
-                            ShaderName = info.ShaderName,
-                            ShaderVariantElements = info.ShaderVariantElements.GetRange(offset, count)
-                        };
-                        chunk.ShaderVariantCount = count;
+                        int pt = (int)v.PassType;
+                        if (!passGroups.ContainsKey(pt))
+                            passGroups[pt] = new List<ShaderVariantCollectionManifest.ShaderVariantElement>();
+                        passGroups[pt].Add(v);
+                    }
 
-                        string shaderSavePath = Path.Combine(basePath, $"{shaderName}_{fileIndex}.shadervariants");
-                        debugLog.AppendLine($"  [写入] {info.ShaderName}_{fileIndex}: {count} 个变种 → {shaderSavePath}");
-                        WriteShaderVariantFileRaw(shaderSavePath, shader, chunk);
-                        fileIndex++;
+                    int fileIndex = 0;
+                    foreach (var kvp in passGroups)
+                    {
+                        var passVariants = kvp.Value;
+                        for (int offset = 0; offset < passVariants.Count; offset += maxVariantsPerFile)
+                        {
+                            int count = Mathf.Min(maxVariantsPerFile, passVariants.Count - offset);
+                            var chunk = new ShaderVariantCollectionManifest.ShaderVariantInfo
+                            {
+                                AssetPath = info.AssetPath,
+                                ShaderName = info.ShaderName,
+                                ShaderVariantElements = passVariants.GetRange(offset, count)
+                            };
+                            chunk.ShaderVariantCount = count;
+
+                            string shaderSavePath = Path.Combine(basePath, $"{shaderName}_{fileIndex}.shadervariants");
+                            debugLog.AppendLine($"  [写入] {info.ShaderName}_{fileIndex}: pass={kvp.Key} {count} 个变种 → {shaderSavePath}");
+                            WriteShaderVariantFileRaw(shaderSavePath, shader, chunk);
+                            fileIndex++;
+                        }
                     }
                 }
 
