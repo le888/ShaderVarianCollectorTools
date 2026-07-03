@@ -64,7 +64,8 @@ public static class ShaderVariantCollector
     private static string _analyzeStatus = "";
 
     // 异步写入状态
-    private const int BatchSize = 20;
+    private const int ScanBatchSize = 5;
+    private const int WriteBatchSize = 3;
     private static List<(string path, Shader shader, ShaderVariantCollectionManifest.ShaderVariantInfo info)> _writeQueue;
     private static int _writeIndex = 0;
     private static List<string> _writeShaderNames;
@@ -229,7 +230,7 @@ public static class ShaderVariantCollector
             return;
         }
 
-        int batchEnd = Mathf.Min(_scanIndex + BatchSize, _scanMaterialGuids.Length);
+        int batchEnd = Mathf.Min(_scanIndex + ScanBatchSize, _scanMaterialGuids.Length);
 
         for (int i = _scanIndex; i < batchEnd; i++)
         {
@@ -523,7 +524,7 @@ public static class ShaderVariantCollector
             return;
         }
 
-        int batchEnd = Mathf.Min(_writeIndex + BatchSize, _writeQueue.Count);
+        int batchEnd = Mathf.Min(_writeIndex + WriteBatchSize, _writeQueue.Count);
 
         for (int i = _writeIndex; i < batchEnd; i++)
         {
