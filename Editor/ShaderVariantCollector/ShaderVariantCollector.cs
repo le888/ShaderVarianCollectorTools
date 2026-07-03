@@ -1448,7 +1448,7 @@ public static class ShaderVariantCollector
                 if (!string.IsNullOrEmpty(kw) && kw != "_" && !kw.StartsWith("multi_compile"))
                     keywords.Add(kw);
             }
-            if (keywords.Count > 1)
+            if (keywords.Count >= 1)
                 groups.Add(keywords);
         }
         return groups;
