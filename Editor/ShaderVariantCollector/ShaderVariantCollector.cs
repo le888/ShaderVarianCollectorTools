@@ -484,7 +484,7 @@ public static class ShaderVariantCollector
             return;
         }
 
-        int batchEnd = Mathf.Min(_writeIndex + WriteBatchSize, _writeQueue.Count);
+        int batchEnd = Mathf.Min(_writeIndex + BatchSize, _writeQueue.Count);
 
         for (int i = _writeIndex; i < batchEnd; i++)
         {
