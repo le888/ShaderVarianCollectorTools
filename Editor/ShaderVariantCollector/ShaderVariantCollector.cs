@@ -400,7 +400,9 @@ public static class ShaderVariantCollector
                     string shaderSavePath = Path.Combine(basePath, $"{shaderName}.shadervariants");
                     shaderNamesSave.Add(shaderName);
                     debugLog.AppendLine($"  [写入] {info.ShaderName}: {info.ShaderVariantElements.Count} 个变种 → {shaderSavePath}");
+                    debugLog.AppendLine($"    shader={shader.name}, elements={info.ShaderVariantElements.Count}");
                     WriteShaderVariantFileRaw(shaderSavePath, shader, info);
+                    debugLog.AppendLine($"    写入完成");
                 }
                 else
                 {
@@ -1197,6 +1199,7 @@ public static class ShaderVariantCollector
     /// </summary>
     private static void WriteShaderVariantFileRaw(string savePath, Shader shader, ShaderVariantCollectionManifest.ShaderVariantInfo info)
     {
+        Debug.Log($"[WriteShaderVariantFileRaw] {savePath}: shader={shader?.name}, variants={info.ShaderVariantElements.Count}");
         ShaderVariantCollection svc = new ShaderVariantCollection();
         AssetDatabase.CreateAsset(svc, savePath);
 
@@ -1225,6 +1228,24 @@ public static class ShaderVariantCollector
 
         EditorUtility.SetDirty(svc);
         AssetDatabase.SaveAssets();
+
+        // 验证写入结果
+        var verify = AssetDatabase.LoadAssetAtPath<ShaderVariantCollection>(savePath);
+        if (verify != null)
+        {
+            using (var so2 = new SerializedObject(verify))
+            {
+                var arr = so2.FindProperty("m_Shaders.Array");
+                int total = 0;
+                for (int i = 0; i < arr.arraySize; i++)
+                    total += arr.GetArrayElementAtIndex(i).FindPropertyRelative("second.variants")?.arraySize ?? 0;
+                Debug.Log($"[WriteShaderVariantFileRaw] 验证 {savePath}: {total} 个变种");
+            }
+        }
+        else
+        {
+            Debug.LogWarning($"[WriteShaderVariantFileRaw] 验证失败: 文件未找到 {savePath}");
+        }
     }
 
     /// <summary>
