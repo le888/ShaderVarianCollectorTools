@@ -245,7 +245,7 @@ public static class ShaderVariantCollector
                     passGroupKeywords.UnionWith(group);
 
                 // 非组关键字：只加该 pass 源码中实际声明的关键字（shader_feature 等）
-                var passAllKeywords = GetPassDeclaredKeywords(shaderPath, passInfo.Name);
+                var passAllKeywords = GetPassDeclaredKeywordsByLightMode(shaderPath, passInfo.Name);
                 var passNonGroupKeywords = new List<string>();
                 foreach (string kw in allEnabledKeywords)
                 {
@@ -1616,6 +1616,92 @@ public static class ShaderVariantCollector
                     currentPassName = trimmed.Substring(5).Trim().Trim('"');
                     if (currentPassName == passName || passName == null)
                         inTargetPass = true;
+                }
+
+                // 在目标 pass 中收集关键字声明
+                if (inTargetPass && (trimmed.StartsWith("#pragma multi_compile") || trimmed.StartsWith("#pragma shader_feature")))
+                {
+                    string[] parts = trimmed.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                    for (int i = 1; i < parts.Length; i++)
+                    {
+                        string kw = parts[i].Trim();
+                        if (!string.IsNullOrEmpty(kw) && kw != "_" && !kw.StartsWith("multi_compile") && !kw.StartsWith("shader_feature"))
+                            keywords.Add(kw);
+                    }
+                }
+            }
+        }
+        catch { }
+
+        return keywords;
+    }
+
+    /// <summary>
+    /// 按 LightMode 标签匹配 pass，获取该 pass 中声明的所有关键字
+    /// </summary>
+    private static HashSet<string> GetPassDeclaredKeywordsByLightMode(string shaderPath, string lightModeTag)
+    {
+        var keywords = new HashSet<string>();
+        if (string.IsNullOrEmpty(shaderPath) || !File.Exists(shaderPath))
+            return keywords;
+
+        try
+        {
+            string source = File.ReadAllText(shaderPath);
+            var lines = source.Split('\n');
+            int braceDepth = 0;
+            bool waitingPassBrace = false;
+            int passStartDepth = -1;
+            string currentLightMode = null;
+            bool inTargetPass = false;
+
+            foreach (string line in lines)
+            {
+                string trimmed = line.Trim();
+
+                if (IsCommentLine(trimmed))
+                    continue;
+
+                if (trimmed == "Pass" || trimmed == "Pass {")
+                {
+                    waitingPassBrace = true;
+                    passStartDepth = -1;
+                    currentLightMode = null;
+                    inTargetPass = false;
+                }
+
+                foreach (char c in line)
+                {
+                    if (c == '{')
+                    {
+                        braceDepth++;
+                        if (waitingPassBrace)
+                        {
+                            passStartDepth = braceDepth;
+                            waitingPassBrace = false;
+                        }
+                    }
+                    else if (c == '}')
+                    {
+                        braceDepth--;
+                        if (passStartDepth >= 0 && braceDepth < passStartDepth)
+                        {
+                            passStartDepth = -1;
+                            inTargetPass = false;
+                        }
+                    }
+                }
+
+                // 检测 LightMode 标签
+                if (passStartDepth >= 0 && (trimmed.StartsWith("LightMode") || trimmed.StartsWith("\"LightMode\"")))
+                {
+                    int eqIdx = trimmed.IndexOf('=');
+                    if (eqIdx >= 0)
+                    {
+                        currentLightMode = trimmed.Substring(eqIdx + 1).Trim().Trim('"');
+                        if (currentLightMode == lightModeTag || lightModeTag == null)
+                            inTargetPass = true;
+                    }
                 }
 
                 // 在目标 pass 中收集关键字声明
