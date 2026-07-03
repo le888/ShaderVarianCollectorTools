@@ -1461,13 +1461,7 @@ public static class ShaderVariantCollector
                 // 收集 Pass 内的 Tags
                 if (passStartLine >= 0 && (trimmed.StartsWith("LightMode") || trimmed.StartsWith("\"LightMode\"")))
                 {
-                    // 格式: "LightMode" = "ForwardBase"
-                    int eqIdx = trimmed.IndexOf('=');
-                    if (eqIdx >= 0)
-                    {
-                        string value = trimmed.Substring(eqIdx + 1).Trim().Trim('"');
-                        passTags = value;
-                    }
+                    passTags = ExtractFirstQuotedValue(trimmed);
                 }
             }
         }
@@ -1585,9 +1579,7 @@ public static class ShaderVariantCollector
 
                 if (passStartDepth >= 0 && (trimmed.StartsWith("LightMode") || trimmed.StartsWith("\"LightMode\"")))
                 {
-                    int eqIdx = trimmed.IndexOf('=');
-                    if (eqIdx >= 0)
-                        currentLightMode = trimmed.Substring(eqIdx + 1).Trim().Trim('"');
+                    currentLightMode = ExtractFirstQuotedValue(trimmed);
                     debugLog?.AppendLine($"    [pass解析] 行{lineNum}: LightMode={currentLightMode}");
                 }
             }
@@ -1743,13 +1735,9 @@ public static class ShaderVariantCollector
                 // 检测 LightMode 标签
                 if (passStartDepth >= 0 && (trimmed.StartsWith("LightMode") || trimmed.StartsWith("\"LightMode\"")))
                 {
-                    int eqIdx = trimmed.IndexOf('=');
-                    if (eqIdx >= 0)
-                    {
-                        currentLightMode = trimmed.Substring(eqIdx + 1).Trim().Trim('"');
-                        if (currentLightMode == lightModeTag || lightModeTag == null)
-                            inTargetPass = true;
-                    }
+                    currentLightMode = ExtractFirstQuotedValue(trimmed);
+                    if (currentLightMode == lightModeTag || lightModeTag == null)
+                        inTargetPass = true;
                 }
 
                 // 在目标 pass 中收集关键字声明
@@ -1768,6 +1756,21 @@ public static class ShaderVariantCollector
         catch { }
 
         return keywords;
+    }
+
+    /// <summary>
+    /// 从行中提取第一个引号对内的值（如 "LightMode" = "ShadowCaster" "Queue" = "AlphaTest" → "ShadowCaster"）
+    /// </summary>
+    private static string ExtractFirstQuotedValue(string line)
+    {
+        int eqIdx = line.IndexOf('=');
+        if (eqIdx < 0) return "";
+        string afterEq = line.Substring(eqIdx + 1);
+        int firstQuote = afterEq.IndexOf('"');
+        if (firstQuote < 0) return afterEq.Trim();
+        int secondQuote = afterEq.IndexOf('"', firstQuote + 1);
+        if (secondQuote < 0) return afterEq.Substring(firstQuote + 1).Trim();
+        return afterEq.Substring(firstQuote + 1, secondQuote - firstQuote - 1);
     }
 
     /// <summary>
