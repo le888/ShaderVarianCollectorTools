@@ -74,6 +74,11 @@ public class ShaderVariantCollectorWindow : EditorWindow
 
         _scrollPos = EditorGUILayout.BeginScrollView(_scrollPos);
 
+        // Pass Type 选择器（最上面）
+        DrawPassTypeSelector();
+
+        EditorGUILayout.Space(5);
+
         // 变体集名字
         string fileName = ShaderVariantCollectorSetting.GetFileName(_currentPackageName);
         string newFileName = EditorGUILayout.DelayedTextField("变体集名字", fileName);
@@ -139,12 +144,6 @@ public class ShaderVariantCollectorWindow : EditorWindow
         bool newDebugRaw = EditorGUILayout.Toggle("Debug: 保存原始渲染变体", debugRaw);
         if (newDebugRaw != debugRaw)
             _pendingSaveDebugRawSVC = newDebugRaw;
-
-        // Pass Type 选择器（仅分析模式可见）
-        if (analyzeMode || newAnalyzeMode)
-        {
-            DrawPassTypeSelector();
-        }
 
         EditorGUILayout.Space(10);
 
