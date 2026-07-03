@@ -244,12 +244,12 @@ public static class ShaderVariantCollector
                 foreach (var group in passGroups)
                     passGroupKeywords.UnionWith(group);
 
-                // 非组关键字：只加该 pass 源码中实际声明的关键字（shader_feature 等）
-                var passAllKeywords = GetPassDeclaredKeywordsByLightMode(shaderPath, passInfo.Name);
+                // 非组关键字：收集所有 pass 的 shader_feature 关键字，加到每个 pass
+                // 材质的关键字是全局的，渲染时所有 pass 都能看到
                 var passNonGroupKeywords = new List<string>();
                 foreach (string kw in allEnabledKeywords)
                 {
-                    if (!passGroupKeywords.Contains(kw) && passAllKeywords.Contains(kw))
+                    if (!passGroupKeywords.Contains(kw))
                         passNonGroupKeywords.Add(kw);
                 }
                 passNonGroupKeywords.Sort();
