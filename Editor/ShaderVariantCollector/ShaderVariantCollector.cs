@@ -64,16 +64,29 @@ public static class ShaderVariantCollector
     private static string _analyzeStatus = "";
 
     // 异步写入状态
-    private const int WriteBatchSize = 5;
+    private const int BatchSize = 20;
     private static List<(string path, Shader shader, ShaderVariantCollectionManifest.ShaderVariantInfo info)> _writeQueue;
     private static int _writeIndex = 0;
-    private static int _writeTotal = 0;
     private static List<string> _writeShaderNames;
     private static string _writeSavePath;
     private static System.Text.StringBuilder _writeDebugLog;
     private static bool _writeDebugRaw;
     private static ShaderVariantCollectionManifest _writeWrapper;
     private static int _writeTotalVariants;
+
+    // 异步扫描状态
+    private static string[] _scanMaterialGuids;
+    private static int _scanIndex = 0;
+    private static Dictionary<Shader, List<HashSet<string>>> _scanShaderMaterials;
+    private static HashSet<string> _scanBlackSet;
+    private static HashSet<string> _scanFilterSet;
+    private static System.Text.StringBuilder _scanDebugLog;
+    private static bool _scanDebugRaw;
+    private static int _scanSkipped = 0;
+    private static string _scanSavePath;
+    private static string _scanSearchPath;
+    private static bool _scanSplitByShaderName;
+    private static string _scanPackageName;
 
     public static void Cancel()
     {
@@ -172,42 +185,55 @@ public static class ShaderVariantCollector
         AssetDatabase.DeleteAsset(savePath);
         EditorTools.CreateFileDirectory(savePath);
 
-        var filterSet = new HashSet<string>(filterShaderName);
-        var blackSet = new HashSet<string>(blackPath);
-        var excludeKeywords = new HashSet<string>(ShaderVariantCollectorSetting.GetGlobalKeywords(packageName));
-        bool debugRaw = ShaderVariantCollectorSetting.GetSaveDebugRawSVC(packageName);
+        // 保存异步扫描状态
+        _scanMaterialGuids = AssetDatabase.FindAssets("t:Material", new[] { searchPath });
+        _scanIndex = 0;
+        _scanShaderMaterials = new Dictionary<Shader, List<HashSet<string>>>();
+        _scanBlackSet = new HashSet<string>(blackPath);
+        _scanFilterSet = new HashSet<string>(filterShaderName);
+        _scanDebugRaw = ShaderVariantCollectorSetting.GetSaveDebugRawSVC(packageName);
+        _scanDebugLog = new System.Text.StringBuilder();
+        _scanDebugLog.AppendLine($"[分析模式] 开始 {System.DateTime.Now}");
+        _scanDebugLog.AppendLine($"savePath: {savePath}");
+        _scanDebugLog.AppendLine($"searchPath: {searchPath}");
+        _scanDebugLog.AppendLine($"splitByShaderName: {splitByShaderName}");
+        _scanDebugLog.AppendLine();
+        _scanSkipped = 0;
+        _scanSavePath = savePath;
+        _scanSearchPath = searchPath;
+        _scanSplitByShaderName = splitByShaderName;
+        _scanPackageName = packageName;
 
-        var debugLog = new System.Text.StringBuilder();
-        debugLog.AppendLine($"[分析模式] 开始 {System.DateTime.Now}");
-        debugLog.AppendLine($"savePath: {savePath}");
-        debugLog.AppendLine($"searchPath: {searchPath}");
-        debugLog.AppendLine($"splitByShaderName: {splitByShaderName}");
-        debugLog.AppendLine($"excludeKeywords: {string.Join(", ", excludeKeywords)}");
-        debugLog.AppendLine();
+        _analyzeStatus = $"扫描材质 0/{_scanMaterialGuids.Length}";
+        EditorApplication.update += AnalyzeScanUpdate;
+    }
 
-        Debug.Log("[分析模式] 开始扫描材质...");
-
-        // 1. 扫描所有材质，按 shader 分组，收集每个材质的启用关键字
-        var shaderMaterials = new Dictionary<Shader, List<HashSet<string>>>();
-        string[] materialGuids = AssetDatabase.FindAssets("t:Material", new[] { searchPath });
-        int skipped = 0;
-
-        for (int mi = 0; mi < materialGuids.Length; mi++)
+    /// <summary>
+    /// 异步扫描材质（每批 BatchSize 个）
+    /// </summary>
+    private static void AnalyzeScanUpdate()
+    {
+        if (_cancelRequested)
         {
-            if (_cancelRequested) { debugLog.AppendLine("[取消] 用户取消收集"); break; }
+            Debug.Log("[分析模式] 用户取消扫描");
+            EditorApplication.update -= AnalyzeScanUpdate;
+            _analyzeRunning = false;
+            _analyzeProgress = 0f;
+            _analyzeStatus = "";
+            return;
+        }
 
-            string path = AssetDatabase.GUIDToAssetPath(materialGuids[mi]);
-            _analyzeProgress = (float)mi / materialGuids.Length * 0.3f;
-            _analyzeStatus = $"扫描材质 {mi + 1}/{materialGuids.Length}";
-            if (IsBlackPath(path, blackSet)) { skipped++; continue; }
+        int batchEnd = Mathf.Min(_scanIndex + BatchSize, _scanMaterialGuids.Length);
+
+        for (int i = _scanIndex; i < batchEnd; i++)
+        {
+            string path = AssetDatabase.GUIDToAssetPath(_scanMaterialGuids[i]);
+            if (IsBlackPath(path, _scanBlackSet)) { _scanSkipped++; continue; }
 
             Material mat = AssetDatabase.LoadAssetAtPath<Material>(path);
-            if (mat == null || mat.shader == null) { skipped++; continue; }
-            if (filterSet.Contains(mat.shader.name)) { skipped++; continue; }
+            if (mat == null || mat.shader == null) { _scanSkipped++; continue; }
+            if (_scanFilterSet.Contains(mat.shader.name)) { _scanSkipped++; continue; }
 
-            // 收集材质启用的关键字
-            // 普通 shader：过滤掉源码中已注释/移除的无效关键字
-            // Shader Graph：无源码可解析，直接使用材质关键字
             var enabledKeywords = new HashSet<string>();
             string shaderPath = AssetDatabase.GetAssetPath(mat.shader);
             bool isShaderGraph = shaderPath.EndsWith(".shadergraph") || shaderPath.EndsWith(".shadersubgraph");
@@ -219,43 +245,58 @@ public static class ShaderVariantCollector
                     enabledKeywords.Add(kw);
             }
 
-            if (!shaderMaterials.ContainsKey(mat.shader))
-                shaderMaterials[mat.shader] = new List<HashSet<string>>();
-            shaderMaterials[mat.shader].Add(enabledKeywords);
+            if (!_scanShaderMaterials.ContainsKey(mat.shader))
+                _scanShaderMaterials[mat.shader] = new List<HashSet<string>>();
+            _scanShaderMaterials[mat.shader].Add(enabledKeywords);
 
-            if (debugRaw)
-                debugLog.AppendLine($"材质: {path} → shader={mat.shader.name}, keywords=[{string.Join(", ", enabledKeywords)}]");
+            if (_scanDebugRaw)
+                _scanDebugLog.AppendLine($"材质: {path} → shader={mat.shader.name}, keywords=[{string.Join(", ", enabledKeywords)}]");
         }
 
-        debugLog.AppendLine();
-        debugLog.AppendLine($"扫描完成: {shaderMaterials.Count} 个 shader, {materialGuids.Length - skipped} 个材质, 跳过 {skipped} 个");
-        Debug.Log($"[分析模式] 扫描完成: {shaderMaterials.Count} 个 shader, 跳过 {skipped} 个材质");
+        _scanIndex = batchEnd;
+        _analyzeProgress = (float)_scanIndex / _scanMaterialGuids.Length * 0.3f;
+        _analyzeStatus = $"扫描材质 {_scanIndex}/{_scanMaterialGuids.Length}";
 
-        // 2. 为每个 shader 生成变种
+        if (_scanIndex >= _scanMaterialGuids.Length)
+        {
+            // 扫描完成
+            EditorApplication.update -= AnalyzeScanUpdate;
+            _scanDebugLog.AppendLine();
+            _scanDebugLog.AppendLine($"扫描完成: {_scanShaderMaterials.Count} 个 shader, {_scanMaterialGuids.Length - _scanSkipped} 个材质, 跳过 {_scanSkipped} 个");
+            Debug.Log($"[分析模式] 扫描完成: {_scanShaderMaterials.Count} 个 shader, 跳过 {_scanSkipped} 个材质");
+
+            // 生成变种并启动异步写入
+            AnalyzeGenerateAndWrite();
+        }
+    }
+
+    /// <summary>
+    /// 扫描完成后：生成变种 + 构建写入队列 + 启动异步写入
+    /// </summary>
+    private static void AnalyzeGenerateAndWrite()
+    {
+        var excludeKeywords = new HashSet<string>(ShaderVariantCollectorSetting.GetGlobalKeywords(_scanPackageName));
         var allVariantInfos = new List<ShaderVariantCollectionManifest.ShaderVariantInfo>();
 
         int shaderIndex = 0;
-        foreach (var kvp in shaderMaterials)
+        foreach (var kvp in _scanShaderMaterials)
         {
-            if (_cancelRequested) { debugLog.AppendLine("[取消] 用户取消收集"); break; }
+            if (_cancelRequested) { _scanDebugLog.AppendLine("[取消] 用户取消收集"); break; }
 
             Shader shader = kvp.Key;
             var materialKeywords = kvp.Value;
             string shaderPath = AssetDatabase.GetAssetPath(shader);
-            _analyzeProgress = 0.3f + (float)shaderIndex / shaderMaterials.Count * 0.7f;
-            _analyzeStatus = $"分析 shader {shaderIndex + 1}/{shaderMaterials.Count}: {shader.name}";
+            _analyzeProgress = 0.3f + (float)shaderIndex / _scanShaderMaterials.Count * 0.2f;
+            _analyzeStatus = $"分析 shader {shaderIndex + 1}/{_scanShaderMaterials.Count}: {shader.name}";
             shaderIndex++;
 
-            // 按 pass 解析 multi_compile 组，只收集用户选择的 pass type
             bool isShaderGraph = shaderPath.EndsWith(".shadergraph") || shaderPath.EndsWith(".shadersubgraph");
             List<PassInfo> passInfos;
 
             if (isShaderGraph)
             {
-                // Shader Graph：无源码可解析，用默认 pass 直接收集材质关键字
-                debugLog.AppendLine($"  [Shader Graph] {shader.name}: 跳过 pass 解析，直接收集材质关键字");
-                var selectedPassTypes = ShaderVariantCollectorSetting.GetSelectedPassTypes(packageName);
-                // Shader Graph 默认用 UniversalForward(13)，不是列表第一个
+                _scanDebugLog.AppendLine($"  [Shader Graph] {shader.name}: 跳过 pass 解析，直接收集材质关键字");
+                var selectedPassTypes = ShaderVariantCollectorSetting.GetSelectedPassTypes(_scanPackageName);
                 var defaultPassType = selectedPassTypes.Contains(13) ? (PassType)13 : (selectedPassTypes.Count > 0 ? (PassType)selectedPassTypes[0] : (PassType)13);
                 passInfos = new List<PassInfo>
                 {
@@ -265,38 +306,28 @@ public static class ShaderVariantCollector
             else
             {
                 var allPassInfos = GetMultiCompileGroupsByPass(shaderPath);
-                var selectedPassTypes = new HashSet<int>(ShaderVariantCollectorSetting.GetSelectedPassTypes(packageName));
+                var selectedPassTypes = new HashSet<int>(ShaderVariantCollectorSetting.GetSelectedPassTypes(_scanPackageName));
                 passInfos = new List<PassInfo>();
                 foreach (var p in allPassInfos)
                 {
                     if (selectedPassTypes.Contains((int)p.PassType))
                         passInfos.Add(p);
                 }
-                debugLog.AppendLine($"  [pass解析] {shader.name}: {allPassInfos.Count} 个 pass, 收集 {passInfos.Count} 个");
-                if (passInfos.Count == 0)
-                {
-                    debugLog.AppendLine($"  [跳过] {shader.name}: 无法解析 pass");
-                    continue;
-                }
+                if (passInfos.Count == 0) continue;
             }
 
-            // 收集该 shader 所有材质中启用的关键字
             var allEnabledKeywords = new HashSet<string>();
             foreach (var kwSet in materialKeywords)
                 allEnabledKeywords.UnionWith(kwSet);
 
-            // 构建变种列表
             var shaderInfo = new ShaderVariantCollectionManifest.ShaderVariantInfo
             {
                 AssetPath = shaderPath,
                 ShaderName = shader.name,
             };
 
-            // 为每个 pass 生成变种（使用各自 pass 的 multi_compile 组）
-            int totalVariantsForShader = 0;
             foreach (var passInfo in passInfos)
             {
-                // 过滤该 pass 的排除关键字组
                 var passGroups = new List<HashSet<string>>();
                 foreach (var group in passInfo.Groups)
                 {
@@ -310,13 +341,10 @@ public static class ShaderVariantCollector
                         passGroups.Add(new HashSet<string>(group));
                 }
 
-                // 收集该 pass 的组关键字
                 var passGroupKeywords = new HashSet<string>();
                 foreach (var group in passGroups)
                     passGroupKeywords.UnionWith(group);
 
-                // 非组关键字：收集所有 pass 的 shader_feature 关键字，加到每个 pass
-                // 材质的关键字是全局的，渲染时所有 pass 都能看到
                 var passNonGroupKeywords = new List<string>();
                 foreach (string kw in allEnabledKeywords)
                 {
@@ -325,11 +353,7 @@ public static class ShaderVariantCollector
                 }
                 passNonGroupKeywords.Sort();
 
-                // 生成该 pass 的关键字组合
                 var passCombinations = GenerateGroupCombinations(passGroups);
-
-                debugLog.AppendLine($"  Pass: {passInfo.Name} → {passInfo.PassType}");
-                debugLog.AppendLine($"    组: {passGroups.Count}, 组合: {passCombinations.Count}");
 
                 if (passCombinations.Count == 0)
                 {
@@ -338,7 +362,6 @@ public static class ShaderVariantCollector
                         PassType = passInfo.PassType,
                         Keywords = passNonGroupKeywords.ToArray()
                     });
-                    totalVariantsForShader++;
                 }
                 else
                 {
@@ -358,57 +381,40 @@ public static class ShaderVariantCollector
                             PassType = passInfo.PassType,
                             Keywords = finalKeywords.ToArray()
                         });
-                        totalVariantsForShader++;
                     }
                 }
             }
 
             shaderInfo.ShaderVariantCount = shaderInfo.ShaderVariantElements.Count;
             allVariantInfos.Add(shaderInfo);
-
-            debugLog.AppendLine($"  总变种数: {shaderInfo.ShaderVariantCount}");
-            foreach (var v in shaderInfo.ShaderVariantElements)
-                debugLog.AppendLine($"    pass={v.PassType} kw=[{string.Join(", ", v.Keywords)}]");
-
             Debug.Log($"[分析模式] {shader.name}: {shaderInfo.ShaderVariantCount} 个变种");
         }
 
-        // 3. 写入 SVC
-        var wrapper = new ShaderVariantCollectionManifest
-        {
-            ShaderVariantInfos = allVariantInfos
-        };
-
         // 构建写入队列
-        int maxVariantsPerFile = ShaderVariantCollectorSetting.GetMaxVariantsPerFile(packageName);
+        var wrapper = new ShaderVariantCollectionManifest { ShaderVariantInfos = allVariantInfos };
+        int maxVariantsPerFile = ShaderVariantCollectorSetting.GetMaxVariantsPerFile(_scanPackageName);
         _writeQueue = new List<(string, Shader, ShaderVariantCollectionManifest.ShaderVariantInfo)>();
         _writeShaderNames = new List<string>();
-        _writeSavePath = savePath;
-        _writeDebugLog = debugLog;
-        _writeDebugRaw = debugRaw;
+        _writeSavePath = _scanSavePath;
+        _writeDebugLog = _scanDebugLog;
+        _writeDebugRaw = _scanDebugRaw;
         _writeWrapper = wrapper;
         _writeTotalVariants = 0;
 
-        // 清理旧文件
-        if (splitByShaderName)
+        if (_scanSplitByShaderName)
         {
-            string basePath = Path.GetDirectoryName(savePath);
+            string basePath = Path.GetDirectoryName(_scanSavePath);
             if (Directory.Exists(basePath))
             {
                 Directory.Delete(basePath, true);
                 Directory.CreateDirectory(basePath);
             }
             AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
-        }
-
-        if (splitByShaderName)
-        {
-            string basePath = Path.GetDirectoryName(savePath);
 
             foreach (var info in wrapper.ShaderVariantInfos)
             {
                 Shader shader = AssetDatabase.LoadAssetAtPath<Shader>(info.AssetPath);
-                if (shader == null) { debugLog.AppendLine($"  [跳过] shader 未找到: {info.AssetPath}"); continue; }
+                if (shader == null) continue;
 
                 string shaderName = info.ShaderName.Replace('/', '_').Replace('\\', '_');
 
@@ -455,12 +461,13 @@ public static class ShaderVariantCollector
 
             Shader firstShader = AssetDatabase.LoadAssetAtPath<Shader>(mergedInfo.AssetPath);
             if (firstShader != null)
-                _writeQueue.Add((savePath, firstShader, mergedInfo));
+                _writeQueue.Add((_scanSavePath, firstShader, mergedInfo));
             _writeTotalVariants = mergedInfo.ShaderVariantCount;
         }
 
-        // 开始异步批量写入
+        // 启动异步批量写入
         _writeIndex = 0;
+        _analyzeProgress = 0.5f;
         _analyzeStatus = $"写入变种 0/{_writeQueue.Count}";
         EditorApplication.update += AnalyzeWriteUpdate;
     }
@@ -489,7 +496,7 @@ public static class ShaderVariantCollector
         AssetDatabase.SaveAssets();
 
         _writeIndex = batchEnd;
-        _analyzeProgress = (float)_writeIndex / _writeQueue.Count;
+        _analyzeProgress = 0.5f + 0.5f * _writeIndex / _writeQueue.Count;
         _analyzeStatus = $"写入变种 {_writeIndex}/{_writeQueue.Count}";
 
         if (_writeIndex >= _writeQueue.Count)
