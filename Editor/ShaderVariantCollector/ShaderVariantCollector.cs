@@ -471,6 +471,7 @@ public static class ShaderVariantCollector
             Debug.Log($"[分析模式] Debug 日志: {debugPath}");
         }
 
+        AssetDatabase.SaveAssets();
         AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
         Debug.Log($"[分析模式] 完成: {wrapper.ShaderVariantInfos.Count} 个 shader, {totalVariants} 个变种");
 
@@ -1135,6 +1136,7 @@ public static class ShaderVariantCollector
             }
         }
 
+        AssetDatabase.SaveAssets();
         AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
     }
 
@@ -1190,7 +1192,7 @@ public static class ShaderVariantCollector
         }
 
         EditorUtility.SetDirty(svc);
-        AssetDatabase.SaveAssets();
+        // SaveAssets 由调用方统一调用
     }
 
     /// <summary>
@@ -1226,7 +1228,7 @@ public static class ShaderVariantCollector
         }
 
         EditorUtility.SetDirty(svc);
-        AssetDatabase.SaveAssets();
+        // SaveAssets 由调用方统一调用
     }
 
     /// <summary>
