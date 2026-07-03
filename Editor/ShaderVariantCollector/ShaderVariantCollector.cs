@@ -208,7 +208,8 @@ public static class ShaderVariantCollector
                 // Shader Graph：无源码可解析，用默认 pass 直接收集材质关键字
                 debugLog.AppendLine($"  [Shader Graph] {shader.name}: 跳过 pass 解析，直接收集材质关键字");
                 var selectedPassTypes = ShaderVariantCollectorSetting.GetSelectedPassTypes(packageName);
-                var defaultPassType = selectedPassTypes.Count > 0 ? (PassType)selectedPassTypes[0] : (PassType)13;
+                // Shader Graph 默认用 UniversalForward(13)，不是列表第一个
+                var defaultPassType = selectedPassTypes.Contains(13) ? (PassType)13 : (selectedPassTypes.Count > 0 ? (PassType)selectedPassTypes[0] : (PassType)13);
                 passInfos = new List<PassInfo>
                 {
                     new PassInfo { Name = "ShaderGraph", PassType = defaultPassType, Groups = new List<HashSet<string>>() }
