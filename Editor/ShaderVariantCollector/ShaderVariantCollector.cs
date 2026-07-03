@@ -164,11 +164,12 @@ public static class ShaderVariantCollector
             if (mat == null || mat.shader == null) { skipped++; continue; }
             if (filterSet.Contains(mat.shader.name)) { skipped++; continue; }
 
-            // 收集材质启用的关键字
+            // 收集材质启用的有效关键字（过滤掉 shader 中已注释/移除的无效关键字）
+            var shaderDeclaredKeywords = GetShaderSupportedKeywords(AssetDatabase.GetAssetPath(mat.shader));
             var enabledKeywords = new HashSet<string>();
             foreach (var kw in mat.shaderKeywords)
             {
-                if (!string.IsNullOrEmpty(kw))
+                if (!string.IsNullOrEmpty(kw) && shaderDeclaredKeywords.Contains(kw))
                     enabledKeywords.Add(kw);
             }
 
