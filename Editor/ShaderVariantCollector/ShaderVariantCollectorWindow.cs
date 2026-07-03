@@ -74,7 +74,14 @@ public class ShaderVariantCollectorWindow : EditorWindow
 
         _scrollPos = EditorGUILayout.BeginScrollView(_scrollPos);
 
-        // Pass Type 选择器（最上面）
+        // 收集模式下拉框
+        bool analyzeMode = ShaderVariantCollectorSetting.GetAnalyzeMode(_currentPackageName);
+        int modeIndex = analyzeMode ? 1 : 0;
+        int newModeIndex = EditorGUILayout.Popup("收集模式", modeIndex, new[] { "渲染模式", "分析模式（不渲染）" });
+        if (newModeIndex != modeIndex)
+            _pendingAnalyzeMode = newModeIndex == 1;
+
+        // Pass Type 选择器
         DrawPassTypeSelector();
 
         EditorGUILayout.Space(5);
@@ -134,11 +141,6 @@ public class ShaderVariantCollectorWindow : EditorWindow
         bool newSaveJson = EditorGUILayout.Toggle("保存变体JSON文件", saveJson);
         if (newSaveJson != saveJson)
             _pendingSaveJson = newSaveJson;
-
-        bool analyzeMode = ShaderVariantCollectorSetting.GetAnalyzeMode(_currentPackageName);
-        bool newAnalyzeMode = EditorGUILayout.Toggle("分析模式（不渲染，直接读材质）", analyzeMode);
-        if (newAnalyzeMode != analyzeMode)
-            _pendingAnalyzeMode = newAnalyzeMode;
 
         bool debugRaw = ShaderVariantCollectorSetting.GetSaveDebugRawSVC(_currentPackageName);
         bool newDebugRaw = EditorGUILayout.Toggle("Debug: 保存原始渲染变体", debugRaw);
