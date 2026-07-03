@@ -312,6 +312,18 @@ public static class ShaderVariantCollector
         int totalVariants = 0;
         int maxVariantsPerFile = ShaderVariantCollectorSetting.GetMaxVariantsPerFile(packageName);
 
+        // 清理旧文件
+        if (splitByShaderName)
+        {
+            string basePath = Path.GetDirectoryName(savePath);
+            if (Directory.Exists(basePath))
+            {
+                Directory.Delete(basePath, true);
+                Directory.CreateDirectory(basePath);
+            }
+            AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
+        }
+
         if (splitByShaderName)
         {
             foreach (var info in wrapper.ShaderVariantInfos)
