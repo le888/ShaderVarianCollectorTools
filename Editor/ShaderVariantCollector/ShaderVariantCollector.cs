@@ -195,7 +195,7 @@ public static class ShaderVariantCollector
 
             // 按 pass 解析 multi_compile 组，跳过不需要收集的 pass
             var allPassInfos = GetMultiCompileGroupsByPass(shaderPath);
-            var skipPassTypes = new HashSet<PassType> { (PassType)9, (PassType)16, PassType.GrabPass };
+            var skipPassTypes = new HashSet<PassType> { (PassType)9, (PassType)16, (PassType)17, PassType.GrabPass };
             var passInfos = new List<PassInfo>();
             foreach (var p in allPassInfos)
             {
