@@ -30,6 +30,11 @@ public class ShaderVariantCollectorWindow : EditorWindow
     private bool _showStripAdditionalShaders = true;
     private bool _showStripAdditionalKeywords = true;
 
+    // 后处理扫描 tab
+    private PostProcessScanner.ScanResult _ppScanResult;
+    private bool _ppShowUsed = true;
+    private bool _ppShowUnused = true;
+
     private string _newBlackScenePath = "";
     private string _newFilterShaderName = "";
     private string _newLocalShaderName = "";
@@ -96,7 +101,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
         _pendingAddStripAdditionalKeyword = false;
 
         // Tab 栏
-        _currentTab = GUILayout.Toolbar(_currentTab, new[] { "收集模式", "裁剪配置" }, GUILayout.Height(28));
+        _currentTab = GUILayout.Toolbar(_currentTab, new[] { "收集模式", "裁剪配置", "后处理扫描" }, GUILayout.Height(28));
         EditorGUILayout.Space(3);
 
         // 配置文件快速定位
@@ -113,6 +118,13 @@ public class ShaderVariantCollectorWindow : EditorWindow
             DrawStripConfigTab();
             EditorGUILayout.EndScrollView();
             ApplyPendingChanges();
+            return;
+        }
+
+        if (_currentTab == 2)
+        {
+            DrawPostProcessScanTab();
+            EditorGUILayout.EndScrollView();
             return;
         }
 
@@ -726,6 +738,86 @@ public class ShaderVariantCollectorWindow : EditorWindow
             EditorGUILayout.EndHorizontal();
         }
         EditorGUI.indentLevel--;
+    }
+
+    // ---- 后处理扫描 Tab ----
+
+    private void DrawPostProcessScanTab()
+    {
+        EditorGUILayout.LabelField("后处理效果扫描", EditorStyles.boldLabel);
+        EditorGUILayout.Space(3);
+
+        if (GUILayout.Button("扫描项目中的后处理", GUILayout.Height(30)))
+        {
+            _ppScanResult = PostProcessScanner.Scan();
+            Debug.Log($"[后处理扫描] 扫描完成: {_ppScanResult.totalProfiles} 个 Profile, {_ppScanResult.totalComponents} 个效果组件");
+        }
+
+        if (_ppScanResult == null)
+        {
+            EditorGUILayout.HelpBox("点击上方按钮扫描项目中 VolumeProfile 使用的后处理效果", MessageType.Info);
+            return;
+        }
+
+        EditorGUILayout.Space(5);
+        EditorGUILayout.LabelField($"扫描结果: {_ppScanResult.totalProfiles} 个 Profile, {_ppScanResult.totalComponents} 个效果组件");
+
+        // 已使用的效果
+        _ppShowUsed = EditorGUILayout.Foldout(_ppShowUsed, $"已使用效果 ({_ppScanResult.usedEffects.Count})", true);
+        if (_ppShowUsed)
+        {
+            EditorGUI.indentLevel++;
+            foreach (var effect in _ppScanResult.usedEffects)
+            {
+                string kwStr = effect.keywords.Count > 0 ? string.Join(", ", effect.keywords) : "（无映射）";
+                EditorGUILayout.LabelField($"  {effect.effectName}  →  {kwStr}", EditorStyles.miniLabel);
+            }
+            EditorGUI.indentLevel--;
+        }
+
+        EditorGUILayout.Space(3);
+
+        // 未使用的效果
+        _ppShowUnused = EditorGUILayout.Foldout(_ppShowUnused, $"未使用效果 ({_ppScanResult.unusedEffects.Count})", true);
+        if (_ppShowUnused)
+        {
+            EditorGUI.indentLevel++;
+            foreach (var effect in _ppScanResult.unusedEffects)
+            {
+                string kwStr = effect.keywords.Count > 0 ? string.Join(", ", effect.keywords) : "（无映射）";
+                EditorGUILayout.LabelField($"  {effect.effectName}  →  {kwStr}", EditorStyles.miniLabel);
+            }
+            EditorGUI.indentLevel--;
+        }
+
+        EditorGUILayout.Space(5);
+
+        // 一键添加到排除关键字
+        var unusedKeywords = PostProcessScanner.GetUnusedKeywords(_ppScanResult);
+        if (unusedKeywords.Count > 0)
+        {
+            GUI.backgroundColor = new Color(0.9f, 0.6f, 0.1f);
+            if (GUILayout.Button($"将未使用效果的关键字添加到裁剪排除列表 ({unusedKeywords.Count} 个)", GUILayout.Height(30)))
+            {
+                var existing = ShaderVariantCollectorSetting.GetStripAdditionalKeywords(_currentPackageName);
+                int added = 0;
+                foreach (var kw in unusedKeywords)
+                {
+                    if (!existing.Contains(kw))
+                    {
+                        existing.Add(kw);
+                        added++;
+                    }
+                }
+                ShaderVariantCollectorSetting.SetStripAdditionalKeywords(_currentPackageName, existing);
+                Debug.Log($"[后处理扫描] 已添加 {added} 个关键字到裁剪排除列表");
+            }
+            GUI.backgroundColor = Color.white;
+        }
+        else
+        {
+            EditorGUILayout.HelpBox("所有后处理效果都在使用中，无需排除", MessageType.Info);
+        }
     }
 
     // 已知的 URP pass type 定义
