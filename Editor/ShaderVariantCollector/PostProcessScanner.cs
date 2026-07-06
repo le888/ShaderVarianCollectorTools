@@ -3,7 +3,6 @@ using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
-using UnityEngine.Rendering.Universal;
 
 /// <summary>
 /// 扫描项目中 VolumeProfile 使用的后处理效果，映射到 shader 关键字
