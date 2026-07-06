@@ -4,6 +4,8 @@ using UnityEditor.Build;
 using UnityEditor.Rendering;
 using UnityEngine.Rendering;
 using System.Collections.Generic;
+using System.IO;
+using System.Text;
 
 
 public class ShaderVariantStripper : IPreprocessShaders
@@ -14,12 +16,22 @@ public class ShaderVariantStripper : IPreprocessShaders
     private static HashSet<string> needHandleNames = new HashSet<string>();
     private static bool initialized = false;
 
+    // 构建日志：记录每个 shader 保留的变种
+    private static Dictionary<string, List<string>> _buildLog = new Dictionary<string, List<string>>();
+    private static int _totalOriginal = 0;
+    private static int _totalKept = 0;
+    private static int _totalStripped = 0;
+
     public int callbackOrder => 0;
 
     public void OnProcessShader(Shader shader, ShaderSnippetData snippet, IList<ShaderCompilerData> data)
     {
         if (!initialized)
         {
+            _buildLog.Clear();
+            _totalOriginal = 0;
+            _totalKept = 0;
+            _totalStripped = 0;
             LoadAllShaderVariants();
             initialized = true;
         }
@@ -28,19 +40,35 @@ public class ShaderVariantStripper : IPreprocessShaders
         if (stripShaderNames.Contains(shader.name))
         {
             int removed = data.Count;
+            _totalOriginal += removed;
+            _totalStripped += removed;
             data.Clear();
             Debug.Log($"[完全裁剪] Shader: {shader.name}, 移除全部 {removed} 个变种");
             return;
         }
 
-        // 不在变体集里面的不处理
+        // 不在变体集里面的不处理（保留所有变种）
         if (!needHandleNames.Contains(shader.name))
         {
+            // 记录不在 SVC 中但保留的 shader
+            if (!_buildLog.ContainsKey(shader.name))
+                _buildLog[shader.name] = new List<string>();
+
+            foreach (var d in data)
+            {
+                string key = FormatVariantKey(snippet.passType, d.shaderKeywordSet.GetShaderKeywords());
+                _buildLog[shader.name].Add($"[未收集] {key}");
+            }
+            _totalOriginal += data.Count;
+            _totalKept += data.Count;
             return;
         }
 
         int originalCount = data.Count;
-        int removedCount = 0;
+        _totalOriginal += originalCount;
+
+        if (!_buildLog.ContainsKey(shader.name))
+            _buildLog[shader.name] = new List<string>();
 
         for (int i = data.Count - 1; i >= 0; i--)
         {
@@ -59,22 +87,75 @@ public class ShaderVariantStripper : IPreprocessShaders
 
             if (hasExcludedKeyword)
             {
-                Debug.Log($"[排除关键字] {key}");
+                _buildLog[shader.name].Add($"[排除关键字] {key}");
                 data.RemoveAt(i);
-                removedCount++;
+                _totalStripped++;
             }
             else if (!validVariants.Contains(key))
             {
-                Debug.Log($"[剔除] {key}");
+                _buildLog[shader.name].Add($"[未收录] {key}");
                 data.RemoveAt(i);
-                removedCount++;
+                _totalStripped++;
+            }
+            else
+            {
+                _buildLog[shader.name].Add($"[保留] {key}");
+                _totalKept++;
             }
         }
 
-        if (removedCount > 0)
+        if (originalCount != data.Count)
         {
-            Debug.Log($"[裁剪] Shader: {shader.name}, Pass: {snippet.passName}, 剔除 {removedCount} / {originalCount}");
+            Debug.Log($"[裁剪] Shader: {shader.name}, Pass: {snippet.passName}, 保留 {data.Count} / {originalCount}");
         }
+    }
+
+    private static string FormatVariantKey(PassType passType, IEnumerable<ShaderKeyword> keywords)
+    {
+        List<string> keywordList = new List<string>();
+        foreach (var kw in keywords)
+            keywordList.Add(kw.name);
+        keywordList.Sort();
+        return $"{(int)passType}|{string.Join("+", keywordList)}";
+    }
+
+    /// <summary>
+    /// 构建完成后写入日志文件
+    /// </summary>
+    internal static void WriteBuildLog()
+    {
+        if (_buildLog.Count == 0) return;
+
+        string logDir = Path.Combine(Application.dataPath, "..", "BuildLogs");
+        Directory.CreateDirectory(logDir);
+        string logPath = Path.Combine(logDir, $"ShaderBuildLog_{System.DateTime.Now:yyyyMMdd_HHmmss}.txt");
+
+        var sb = new StringBuilder();
+        sb.AppendLine("========== Shader 变种构建日志 ==========");
+        sb.AppendLine($"时间: {System.DateTime.Now}");
+        sb.AppendLine($"变种总数: 原始={_totalOriginal}, 保留={_totalKept}, 裁剪={_totalStripped}");
+        sb.AppendLine();
+
+        // 按 shader 名称排序
+        var sortedShaders = new List<string>(_buildLog.Keys);
+        sortedShaders.Sort();
+
+        foreach (var shaderName in sortedShaders)
+        {
+            var variants = _buildLog[shaderName];
+            sb.AppendLine($"--- {shaderName} ({variants.Count} 条) ---");
+            foreach (var v in variants)
+            {
+                sb.AppendLine($"  {v}");
+            }
+            sb.AppendLine();
+        }
+
+        File.WriteAllText(logPath, sb.ToString(), Encoding.UTF8);
+        Debug.Log($"[构建日志] 已保存: {logPath}");
+
+        _buildLog.Clear();
+        initialized = false;
     }
 
     [MenuItem("Tools/ShaderVariantStripper LoadAllShaderVariants")]
@@ -192,5 +273,18 @@ public class ShaderVariantStripper : IPreprocessShaders
         }
         keywordList.Sort();
         return $"{shaderName}|{(int)passType}|{string.Join("+", keywordList)}";
+    }
+}
+
+/// <summary>
+/// 构建完成后自动写入 shader 变种日志
+/// </summary>
+public class ShaderBuildLogWriter : IPostprocessBuild
+{
+    public int callbackOrder => 999;
+
+    public void OnPostprocessBuild(BuildReport report)
+    {
+        ShaderVariantStripper.WriteBuildLog();
     }
 }
