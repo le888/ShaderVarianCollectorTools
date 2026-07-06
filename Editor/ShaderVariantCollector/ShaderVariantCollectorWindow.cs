@@ -955,9 +955,11 @@ public class ShaderVariantCollectorWindow : EditorWindow
 
         // 新增
         EditorGUILayout.BeginHorizontal();
-        _newLightModeTag = EditorGUILayout.TextField("LightMode", _newLightModeTag);
-        _newLightModePassType = EditorGUILayout.IntField("PassType", _newLightModePassType, GUILayout.Width(120));
-        if (GUILayout.Button("添加", GUILayout.Width(60)))
+        EditorGUILayout.LabelField("LightMode", GUILayout.Width(70));
+        _newLightModeTag = EditorGUILayout.TextField(_newLightModeTag, GUILayout.MinWidth(100));
+        EditorGUILayout.LabelField("PassType", GUILayout.Width(55));
+        _newLightModePassType = EditorGUILayout.IntField(_newLightModePassType, GUILayout.Width(50));
+        if (GUILayout.Button("添加", GUILayout.Width(45)))
         {
             if (!string.IsNullOrEmpty(_newLightModeTag) && _newLightModePassType > 0)
             {
