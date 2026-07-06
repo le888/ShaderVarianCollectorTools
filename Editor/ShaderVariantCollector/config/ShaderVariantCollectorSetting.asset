@@ -30,3 +30,6 @@ MonoBehaviour:
   saveDebugRawSVC: 1
   analyzeMode: 0
   selectedPassTypes: 080000000d000000
+  stripSVCPath: Assets/ResourcesAB/Config/ShaderVarians
+  stripAdditionalShaderNames: []
+  stripAdditionalKeywords: []
