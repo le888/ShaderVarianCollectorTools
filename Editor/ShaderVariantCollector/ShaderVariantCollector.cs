@@ -2136,6 +2136,14 @@ public static class ShaderVariantCollector
     // passType 值来自渲染收集的 SVC 文件（与 Unity PassType 枚举不一致）
     private static PassType LightModeToPassType(string lightMode)
     {
+        // 先检查自定义映射
+        var customMappings = ShaderVariantCollectorSetting.GetCustomLightModes(_currentPackageName);
+        foreach (var mapping in customMappings)
+        {
+            if (mapping.lightModeTag == lightMode)
+                return (PassType)mapping.passType;
+        }
+
         switch (lightMode)
         {
             // URP pass — 真实 passType 值（从 SVC 确认）

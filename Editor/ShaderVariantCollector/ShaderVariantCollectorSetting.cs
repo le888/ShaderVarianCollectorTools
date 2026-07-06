@@ -90,6 +90,7 @@ public class ShaderVariantCollectorSetting : ScriptableObject
     public bool saveDebugRawSVC = false;
     public bool analyzeMode = false;
     public List<int> selectedPassTypes = new List<int> { 8, 13 }; // 默认 ShadowCaster + UniversalForward
+    public List<CustomLightModeMapping> customLightModes = new List<CustomLightModeMapping>();
 
     // Get/Set 方法
     public static string GetFileName(string packageName)
@@ -309,6 +310,21 @@ public class ShaderVariantCollectorSetting : ScriptableObject
         SaveSettings(settings);
     }
 
+    // 自定义 LightMode 映射
+    public static List<CustomLightModeMapping> GetCustomLightModes(string packageName)
+    {
+        var list = GetSettings().customLightModes;
+        if (list == null) list = new List<CustomLightModeMapping>();
+        return list;
+    }
+
+    public static void SetCustomLightModes(string packageName, List<CustomLightModeMapping> value)
+    {
+        ShaderVariantCollectorSetting settings = GetSettings();
+        settings.customLightModes = value ?? new List<CustomLightModeMapping>();
+        SaveSettings(settings);
+    }
+
     // ---- 裁剪配置字段 ----
     public string stripSVCPath = "Assets/ResourcesAB/Config/ShaderVarians";
     public List<string> stripAdditionalShaderNames = new List<string>();
@@ -351,5 +367,23 @@ public class ShaderVariantCollectorSetting : ScriptableObject
         ShaderVariantCollectorSetting settings = GetSettings();
         settings.stripAdditionalKeywords = new List<string>(keywords);
         SaveSettings(settings);
+    }
+}
+
+/// <summary>
+/// 自定义 LightMode 到 PassType 的映射
+/// </summary>
+[System.Serializable]
+public class CustomLightModeMapping
+{
+    public string lightModeTag;  // 如 "DepthOnlyTree"
+    public int passType;         // 如 100
+
+    public CustomLightModeMapping() { }
+
+    public CustomLightModeMapping(string tag, int type)
+    {
+        lightModeTag = tag;
+        passType = type;
     }
 }

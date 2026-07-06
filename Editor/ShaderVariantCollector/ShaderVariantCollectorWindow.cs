@@ -890,6 +890,8 @@ public class ShaderVariantCollectorWindow : EditorWindow
     };
 
     private bool _showPassTypes = false;
+    private string _newLightModeTag = "";
+    private int _newLightModePassType = 100;
 
     private void DrawPassTypeSelector()
     {
@@ -918,6 +920,66 @@ public class ShaderVariantCollectorWindow : EditorWindow
         {
             _pendingSelectedPassTypes = new List<int>(selectedSet);
         }
+
+        EditorGUILayout.Space(5);
+        EditorGUILayout.LabelField("自定义 LightMode 映射", EditorStyles.miniLabel);
+
+        var customModes = ShaderVariantCollectorSetting.GetCustomLightModes(_currentPackageName);
+        int removeIndex = -1;
+
+        for (int i = 0; i < customModes.Count; i++)
+        {
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField($"{customModes[i].lightModeTag} → PassType {customModes[i].passType}");
+            // 勾选是否参与收集
+            bool wasSelected = selectedSet.Contains(customModes[i].passType);
+            bool newSelected = EditorGUILayout.Toggle(wasSelected, GUILayout.Width(20));
+            if (newSelected != wasSelected)
+            {
+                if (newSelected) selectedSet.Add(customModes[i].passType);
+                else selectedSet.Remove(customModes[i].passType);
+                _pendingSelectedPassTypes = new List<int>(selectedSet);
+            }
+            if (GUILayout.Button("X", GUILayout.Width(25)))
+            {
+                removeIndex = i;
+            }
+            EditorGUILayout.EndHorizontal();
+        }
+
+        if (removeIndex >= 0)
+        {
+            customModes.RemoveAt(removeIndex);
+            ShaderVariantCollectorSetting.SetCustomLightModes(_currentPackageName, customModes);
+        }
+
+        // 新增
+        EditorGUILayout.BeginHorizontal();
+        _newLightModeTag = EditorGUILayout.TextField("LightMode", _newLightModeTag);
+        _newLightModePassType = EditorGUILayout.IntField("PassType", _newLightModePassType, GUILayout.Width(120));
+        if (GUILayout.Button("添加", GUILayout.Width(60)))
+        {
+            if (!string.IsNullOrEmpty(_newLightModeTag) && _newLightModePassType > 0)
+            {
+                bool exists = false;
+                foreach (var m in customModes)
+                {
+                    if (m.lightModeTag == _newLightModeTag) { exists = true; break; }
+                }
+                if (!exists)
+                {
+                    customModes.Add(new CustomLightModeMapping(_newLightModeTag, _newLightModePassType));
+                    ShaderVariantCollectorSetting.SetCustomLightModes(_currentPackageName, customModes);
+                    // 自动勾选新添加的 PassType
+                    selectedSet.Add(_newLightModePassType);
+                    _pendingSelectedPassTypes = new List<int>(selectedSet);
+                    _newLightModeTag = "";
+                    _newLightModePassType = 100;
+                }
+                else { Debug.LogWarning($"LightMode 已存在: {_newLightModeTag}"); }
+            }
+        }
+        EditorGUILayout.EndHorizontal();
 
         EditorGUI.indentLevel--;
     }
