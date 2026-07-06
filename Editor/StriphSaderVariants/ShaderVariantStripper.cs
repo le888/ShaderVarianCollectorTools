@@ -48,34 +48,19 @@ public class ShaderVariantStripper : IPreprocessShaders
             return;
         }
 
-        // 不在变体集里面的不处理（保留所有变种）
-        if (!needHandleNames.Contains(shader.name))
-        {
-            // 记录不在 SVC 中但保留的 shader
-            if (!_buildLog.ContainsKey(shader.name))
-                _buildLog[shader.name] = new List<string>();
-
-            foreach (var d in data)
-            {
-                string key = FormatVariantKey(snippet.passType, d.shaderKeywordSet.GetShaderKeywords());
-                _buildLog[shader.name].Add($"[保留][未在收集范围] {key}");
-            }
-            _totalOriginal += data.Count;
-            _totalKept += data.Count;
-            return;
-        }
-
         int originalCount = data.Count;
         _totalOriginal += originalCount;
 
         if (!_buildLog.ContainsKey(shader.name))
             _buildLog[shader.name] = new List<string>();
 
+        bool inSVCRange = needHandleNames.Contains(shader.name);
+
         for (int i = data.Count - 1; i >= 0; i--)
         {
             string key = GenerateVariantKey(shader.name, snippet.passType, data[i].shaderKeywordSet.GetShaderKeywords());
 
-            // 检查变种是否包含排除关键字
+            // 检查变种是否包含排除关键字（对所有 shader 生效）
             bool hasExcludedKeyword = false;
             foreach (var kw in data[i].shaderKeywordSet.GetShaderKeywords())
             {
@@ -92,11 +77,21 @@ public class ShaderVariantStripper : IPreprocessShaders
                 data.RemoveAt(i);
                 _totalStripped++;
             }
-            else if (!validVariants.Contains(key))
+            else if (inSVCRange && !validVariants.Contains(key))
             {
                 _buildLog[shader.name].Add($"[裁剪][未收录SVC] {key}");
                 data.RemoveAt(i);
                 _totalStripped++;
+            }
+            else if (!inSVCRange)
+            {
+                _buildLog[shader.name].Add($"[保留][未在收集范围] {key}");
+                _totalKept++;
+            }
+            else
+            {
+                _buildLog[shader.name].Add($"[保留][SVC收录] {key}");
+                _totalKept++;
             }
             else
             {
