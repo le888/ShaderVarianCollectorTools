@@ -99,6 +99,13 @@ public class ShaderVariantCollectorWindow : EditorWindow
         _currentTab = GUILayout.Toolbar(_currentTab, new[] { "收集模式", "裁剪配置" }, GUILayout.Height(28));
         EditorGUILayout.Space(3);
 
+        // 配置文件快速定位
+        var settings = ShaderVariantCollectorSetting.GetSettings();
+        EditorGUI.BeginDisabledGroup(true);
+        EditorGUILayout.ObjectField("当前配置文件", settings, typeof(ShaderVariantCollectorSetting), false);
+        EditorGUI.EndDisabledGroup();
+        EditorGUILayout.Space(3);
+
         _scrollPos = EditorGUILayout.BeginScrollView(_scrollPos);
 
         if (_currentTab == 1)
