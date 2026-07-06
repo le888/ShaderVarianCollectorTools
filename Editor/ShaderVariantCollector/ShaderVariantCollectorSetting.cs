@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 
+[CreateAssetMenu(fileName = "ShaderVariantCollectorSetting", menuName = "ShaderVarianCollector/创建配置文件")]
 public class ShaderVariantCollectorSetting : ScriptableObject
 {
     private const string DefaultSavePath = "MyShaderVariants.shadervariants";
