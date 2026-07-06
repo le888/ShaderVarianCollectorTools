@@ -58,7 +58,7 @@ public class ShaderVariantStripper : IPreprocessShaders
             foreach (var d in data)
             {
                 string key = FormatVariantKey(snippet.passType, d.shaderKeywordSet.GetShaderKeywords());
-                _buildLog[shader.name].Add($"[未收集] {key}");
+                _buildLog[shader.name].Add($"[保留][未在收集范围] {key}");
             }
             _totalOriginal += data.Count;
             _totalKept += data.Count;
@@ -88,19 +88,19 @@ public class ShaderVariantStripper : IPreprocessShaders
 
             if (hasExcludedKeyword)
             {
-                _buildLog[shader.name].Add($"[排除关键字] {key}");
+                _buildLog[shader.name].Add($"[裁剪][排除关键字] {key}");
                 data.RemoveAt(i);
                 _totalStripped++;
             }
             else if (!validVariants.Contains(key))
             {
-                _buildLog[shader.name].Add($"[未收录] {key}");
+                _buildLog[shader.name].Add($"[裁剪][未收录SVC] {key}");
                 data.RemoveAt(i);
                 _totalStripped++;
             }
             else
             {
-                _buildLog[shader.name].Add($"[保留] {key}");
+                _buildLog[shader.name].Add($"[保留][SVC收录] {key}");
                 _totalKept++;
             }
         }
