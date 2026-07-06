@@ -35,6 +35,8 @@ public static class ShaderVariantCollector
         ApplyGlobalKeywords,
         CollectGlobalKeywordsSleeping,
         CollectGlobalKeywordsClearSleeping,
+        SaveCollection,
+        SplitWriting,
     }
 
     private const float WaitMilliseconds = 1000f;
@@ -74,6 +76,13 @@ public static class ShaderVariantCollector
     private static bool _writeDebugRaw;
     private static ShaderVariantCollectionManifest _writeWrapper;
     private static int _writeTotalVariants;
+
+    // 异步拆分状态（渲染模式）
+    private static List<(string path, Shader shader, List<ShaderVariantCollection.ShaderVariant> variants)> _splitQueue;
+    private static int _splitIndex = 0;
+    private static List<string> _splitShaderNames;
+    private static string _splitBasePath;
+    private static string _splitBaseName;
 
     // 异步扫描状态
     private static string[] _scanMaterialGuids;
@@ -382,11 +391,20 @@ public static class ShaderVariantCollector
 
                     if (passCombinations.Count == 0)
                     {
-                        shaderInfo.ShaderVariantElements.Add(new ShaderVariantCollectionManifest.ShaderVariantElement
+                        // 排除包含被排除关键字的变种
+                        bool hasExcluded = false;
+                        foreach (string kw in passNonGroupKeywords)
                         {
-                            PassType = passInfo.PassType,
-                            Keywords = passNonGroupKeywords.ToArray()
-                        });
+                            if (_genExcludeKeywords.Contains(kw)) { hasExcluded = true; break; }
+                        }
+                        if (!hasExcluded)
+                        {
+                            shaderInfo.ShaderVariantElements.Add(new ShaderVariantCollectionManifest.ShaderVariantElement
+                            {
+                                PassType = passInfo.PassType,
+                                Keywords = passNonGroupKeywords.ToArray()
+                            });
+                        }
                     }
                     else
                     {
@@ -400,6 +418,14 @@ public static class ShaderVariantCollector
                                     finalKeywords.Add(trimmed);
                             }
                             finalKeywords.Sort();
+
+                            // 排除包含被排除关键字的变种
+                            bool hasExcludedCombo = false;
+                            foreach (string kw in finalKeywords)
+                            {
+                                if (_genExcludeKeywords.Contains(kw)) { hasExcludedCombo = true; break; }
+                            }
+                            if (hasExcludedCombo) continue;
 
                             shaderInfo.ShaderVariantElements.Add(new ShaderVariantCollectionManifest.ShaderVariantElement
                             {
@@ -733,23 +759,54 @@ public static class ShaderVariantCollector
         }
         if (_steps == ESteps.WaitingDone)
         {
-            _analyzeProgress = 0.95f;
+            _analyzeProgress = 0.9f;
             _analyzeStatus = "保存变种集";
             // 注意：一定要延迟保存才会起效
             if (_elapsedTime.ElapsedMilliseconds > WaitMilliseconds)
             {
                 _elapsedTime.Stop();
+                _steps = ESteps.SaveCollection;
+            }
+        }
 
-                // 保存结果并创建清单
-                SaveShaderVariantCollection();
-                // CreateManifest();
+        if (_steps == ESteps.SaveCollection)
+        {
+            _analyzeProgress = 0.9f;
+            _analyzeStatus = "保存变种集";
 
-                Debug.Log($"搜集SVC完毕！");
-                EditorApplication.update -= EditorUpdate;
-                _steps = ESteps.None;
-                _analyzeProgress = 0f;
-                _analyzeStatus = "";
-                _completedCallback?.Invoke();
+            // 执行保存（不含拆分），并构建拆分队列
+            SaveShaderVariantCollection(buildSplitQueue: true);
+
+            if (_splitByShaderName && _splitQueue != null && _splitQueue.Count > 0)
+            {
+                _splitIndex = 0;
+                _steps = ESteps.SplitWriting;
+            }
+            else
+            {
+                FinishCollection();
+            }
+        }
+
+        if (_steps == ESteps.SplitWriting)
+        {
+            int batchEnd = Mathf.Min(_splitIndex + WriteBatchSize, _splitQueue.Count);
+
+            for (int i = _splitIndex; i < batchEnd; i++)
+            {
+                var (path, shader, variants) = _splitQueue[i];
+                WriteShaderVariantFile(path, shader, variants);
+            }
+
+            AssetDatabase.SaveAssets();
+            _splitIndex = batchEnd;
+
+            _analyzeProgress = 0.9f + 0.09f * _splitIndex / Mathf.Max(1, _splitQueue.Count);
+            _analyzeStatus = $"拆分文件 {_splitIndex}/{_splitQueue.Count}";
+
+            if (_splitIndex >= _splitQueue.Count)
+            {
+                FinishSplitCollection();
             }
         }
     }
@@ -1120,7 +1177,10 @@ public static class ShaderVariantCollector
         
     }
 
-    private static void SaveShaderVariantCollection()
+    /// <summary>
+    /// 保存变种集。当 buildSplitQueue=true 且启用拆分时，只构建拆分队列而不执行写入（由 SplitWriting 异步处理）。
+    /// </summary>
+    private static void SaveShaderVariantCollection(bool buildSplitQueue = false)
     {
         AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
 
@@ -1157,7 +1217,7 @@ public static class ShaderVariantCollector
             int afterPermutation = 0;
             foreach (var info in wrapper.ShaderVariantInfos) afterPermutation += info.ShaderVariantElements.Count;
             Debug.Log($"[变种统计] 排列组合后: {wrapper.ShaderVariantInfos.Count} shader, {afterPermutation} 变种");
-            
+
             // 获取Always Included Shaders列表
             var alwaysIncludedShaderNames = GetAlwaysIncludedShaderNames();
             var hideShader = GetURPHiddenShaderNames();
@@ -1175,9 +1235,9 @@ public static class ShaderVariantCollector
             int afterFilter = 0;
             foreach (var info in wrapper.ShaderVariantInfos) afterFilter += info.ShaderVariantElements.Count;
             Debug.Log($"[变种统计] 过滤后: {wrapper.ShaderVariantInfos.Count} shader, {afterFilter} 变种");
-            
+
             string jsonData = JsonUtility.ToJson(wrapper, true);
-            
+
             // 根据设置决定是否保存JSON文件
             bool saveJsonFile = ShaderVariantCollectorSetting.GetSaveJsonFile(_currentPackageName);
             if (saveJsonFile)
@@ -1188,79 +1248,161 @@ public static class ShaderVariantCollector
 
             if (_splitByShaderName)
             {
-                List<string> shaderNamesSave = new List<string>();
                 string basePath = Path.GetDirectoryName(_savePath);
                 string baseName = Path.GetFileNameWithoutExtension(_savePath);
-                
+
                 // 在保存之前删除目标路径下的所有.shadervariants文件
                 if (Directory.Exists(basePath))
                 {
                     Directory.Delete(basePath, true);
                     Directory.CreateDirectory(basePath);
                 }
-                
+
                 int maxVariantsPerFile = ShaderVariantCollectorSetting.GetMaxVariantsPerFile(_currentPackageName);
 
-                foreach (var shaderInfo in wrapper.ShaderVariantInfos)
+                if (buildSplitQueue)
                 {
-                    string shaderName = shaderInfo.ShaderName;
-                    // 处理shader名称，将路径分隔符替换为下划线
-                    shaderName = shaderName.Replace('/', '_').Replace('\\', '_');
+                    // 构建异步拆分队列，不在此处写入
+                    _splitQueue = new List<(string, Shader, List<ShaderVariantCollection.ShaderVariant>)>();
+                    _splitShaderNames = new List<string>();
+                    _splitBasePath = basePath;
+                    _splitBaseName = baseName;
 
-                    Shader shader = AssetDatabase.LoadAssetAtPath<Shader>(shaderInfo.AssetPath);
-                    if (shader == null) continue;
-
-                    // 收集有效变种（try/catch 过滤不支持的关键字组合）
-                    var validVariants = new List<ShaderVariantCollection.ShaderVariant>();
-                    foreach (var variant in shaderInfo.ShaderVariantElements)
+                    foreach (var shaderInfo in wrapper.ShaderVariantInfos)
                     {
-                        try
+                        string shaderName = shaderInfo.ShaderName.Replace('/', '_').Replace('\\', '_');
+                        Shader shader = AssetDatabase.LoadAssetAtPath<Shader>(shaderInfo.AssetPath);
+                        if (shader == null) continue;
+
+                        var validVariants = new List<ShaderVariantCollection.ShaderVariant>();
+                        foreach (var variant in shaderInfo.ShaderVariantElements)
                         {
-                            validVariants.Add(new ShaderVariantCollection.ShaderVariant(shader, variant.PassType, variant.Keywords));
+                            try
+                            {
+                                validVariants.Add(new ShaderVariantCollection.ShaderVariant(shader, variant.PassType, variant.Keywords));
+                            }
+                            catch (ArgumentException) { }
                         }
-                        catch (ArgumentException)
+
+                        Debug.Log($"[拆分保存] {shaderName}: manifest变种={shaderInfo.ShaderVariantElements.Count}, 有效变种={validVariants.Count}");
+
+                        if (maxVariantsPerFile <= 0 || validVariants.Count <= maxVariantsPerFile)
                         {
-                            // 该 pass 不支持此关键字组合，跳过
+                            string shaderSavePath = Path.Combine(basePath, $"{shaderName}.shadervariants");
+                            _splitShaderNames.Add(shaderName);
+                            _splitQueue.Add((shaderSavePath, shader, validVariants));
                         }
-                    }
-
-                    Debug.Log($"[拆分保存] {shaderName}: manifest变种={shaderInfo.ShaderVariantElements.Count}, 有效变种={validVariants.Count}");
-
-                    // 不拆分或变种数未超限，一个文件；否则拆分
-                    if (maxVariantsPerFile <= 0 || validVariants.Count <= maxVariantsPerFile)
-                    {
-                        string shaderSavePath = Path.Combine(basePath, $"{shaderName}.shadervariants");
-                        shaderNamesSave.Add(shaderName);
-                        WriteShaderVariantFile(shaderSavePath, shader, validVariants);
-                    }
-                    else
-                    {
-                        // 按数量拆分为多个文件
-                        int fileIndex = 0;
-                        for (int offset = 0; offset < validVariants.Count; offset += maxVariantsPerFile)
+                        else
                         {
-                            int count = Mathf.Min(maxVariantsPerFile, validVariants.Count - offset);
-                            string shaderSavePath = Path.Combine(basePath, $"{shaderName}_{fileIndex}.shadervariants");
-                            shaderNamesSave.Add($"{shaderName}_{fileIndex}");
-
-                            var chunk = validVariants.GetRange(offset, count);
-                            WriteShaderVariantFile(shaderSavePath, shader, chunk);
-                            fileIndex++;
+                            int fileIndex = 0;
+                            for (int offset = 0; offset < validVariants.Count; offset += maxVariantsPerFile)
+                            {
+                                int count = Mathf.Min(maxVariantsPerFile, validVariants.Count - offset);
+                                string shaderSavePath = Path.Combine(basePath, $"{shaderName}_{fileIndex}.shadervariants");
+                                _splitShaderNames.Add($"{shaderName}_{fileIndex}");
+                                _splitQueue.Add((shaderSavePath, shader, validVariants.GetRange(offset, count)));
+                                fileIndex++;
+                            }
                         }
                     }
                 }
+                else
+                {
+                    // 同步拆分（兼容旧调用路径）
+                    List<string> shaderNamesSave = new List<string>();
+                    int totalShaders = wrapper.ShaderVariantInfos.Count;
 
-                //保存shader名称为txt文件，每个shader名称一行
-                string shaderNamesPath = Path.Combine(basePath, $"{baseName}_shaderNames.txt");
-                File.WriteAllLines(shaderNamesPath, shaderNamesSave);
+                    for (int si = 0; si < totalShaders; si++)
+                    {
+                        var shaderInfo = wrapper.ShaderVariantInfos[si];
+                        string shaderName = shaderInfo.ShaderName.Replace('/', '_').Replace('\\', '_');
 
-                // 如果选择了拆分保存，删除完整的变体集文件
-                AssetDatabase.DeleteAsset(_savePath);
-                AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
+                        _analyzeProgress = 0.9f + 0.09f * (si + 1) / Mathf.Max(1, totalShaders);
+                        _analyzeStatus = $"拆分文件 {si + 1}/{totalShaders}: {shaderName}";
+
+                        Shader shader = AssetDatabase.LoadAssetAtPath<Shader>(shaderInfo.AssetPath);
+                        if (shader == null) continue;
+
+                        var validVariants = new List<ShaderVariantCollection.ShaderVariant>();
+                        foreach (var variant in shaderInfo.ShaderVariantElements)
+                        {
+                            try
+                            {
+                                validVariants.Add(new ShaderVariantCollection.ShaderVariant(shader, variant.PassType, variant.Keywords));
+                            }
+                            catch (ArgumentException) { }
+                        }
+
+                        Debug.Log($"[拆分保存] {shaderName}: manifest变种={shaderInfo.ShaderVariantElements.Count}, 有效变种={validVariants.Count}");
+
+                        if (maxVariantsPerFile <= 0 || validVariants.Count <= maxVariantsPerFile)
+                        {
+                            string shaderSavePath = Path.Combine(basePath, $"{shaderName}.shadervariants");
+                            shaderNamesSave.Add(shaderName);
+                            WriteShaderVariantFile(shaderSavePath, shader, validVariants);
+                        }
+                        else
+                        {
+                            int fileIndex = 0;
+                            for (int offset = 0; offset < validVariants.Count; offset += maxVariantsPerFile)
+                            {
+                                int count = Mathf.Min(maxVariantsPerFile, validVariants.Count - offset);
+                                string shaderSavePath = Path.Combine(basePath, $"{shaderName}_{fileIndex}.shadervariants");
+                                shaderNamesSave.Add($"{shaderName}_{fileIndex}");
+                                WriteShaderVariantFile(shaderSavePath, shader, validVariants.GetRange(offset, count));
+                                fileIndex++;
+                            }
+                        }
+                    }
+
+                    string shaderNamesPath = Path.Combine(basePath, $"{baseName}_shaderNames.txt");
+                    File.WriteAllLines(shaderNamesPath, shaderNamesSave);
+                    AssetDatabase.DeleteAsset(_savePath);
+                    AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
+                }
             }
         }
 
+        if (!buildSplitQueue || !_splitByShaderName)
+        {
+            AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
+        }
+    }
+
+    /// <summary>
+    /// 收集完成（无拆分或拆分队列为空时调用）
+    /// </summary>
+    private static void FinishCollection()
+    {
         AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
+        Debug.Log($"搜集SVC完毕！");
+        EditorApplication.update -= EditorUpdate;
+        _steps = ESteps.None;
+        _analyzeProgress = 0f;
+        _analyzeStatus = "";
+        _completedCallback?.Invoke();
+    }
+
+    /// <summary>
+    /// 异步拆分完成后调用
+    /// </summary>
+    private static void FinishSplitCollection()
+    {
+        // 保存 shader 名称列表
+        if (_splitShaderNames != null && _splitShaderNames.Count > 0)
+        {
+            string shaderNamesPath = Path.Combine(_splitBasePath, $"{_splitBaseName}_shaderNames.txt");
+            File.WriteAllLines(shaderNamesPath, _splitShaderNames);
+        }
+
+        // 删除完整的变体集文件
+        AssetDatabase.DeleteAsset(_savePath);
+        AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
+
+        _splitQueue = null;
+        _splitShaderNames = null;
+
+        FinishCollection();
     }
 
     /// <summary>
@@ -1437,17 +1579,26 @@ public static class ShaderVariantCollector
                 // 如果当前变种没有组关键字（如 ShadowCaster），直接保留原始
                 if (!hasGroupKeyword)
                 {
-                    string key = $"{(int)passType}|{string.Join(" ", cleanKeywords)}";
-                    if (!seenVariants.Contains(key))
+                    // 排除包含被排除关键字的变种
+                    bool hasExcluded = false;
+                    foreach (string kw in cleanKeywords)
                     {
-                        seenVariants.Add(key);
-                        shaderInfo.ShaderVariantElements.Add(new ShaderVariantCollectionManifest.ShaderVariantElement
+                        if (excludeSet.Contains(kw)) { hasExcluded = true; break; }
+                    }
+                    if (!hasExcluded)
+                    {
+                        string key = $"{(int)passType}|{string.Join(" ", cleanKeywords)}";
+                        if (!seenVariants.Contains(key))
                         {
-                            PassType = passType,
-                            Keywords = cleanKeywords.ToArray()
-                        });
-                        shaderInfo.ShaderVariantCount++;
-                        addedCount++;
+                            seenVariants.Add(key);
+                            shaderInfo.ShaderVariantElements.Add(new ShaderVariantCollectionManifest.ShaderVariantElement
+                            {
+                                PassType = passType,
+                                Keywords = cleanKeywords.ToArray()
+                            });
+                            shaderInfo.ShaderVariantCount++;
+                            addedCount++;
+                        }
                     }
                     continue;
                 }
@@ -1465,6 +1616,14 @@ public static class ShaderVariantCollector
                             finalKeywords.Add(trimmed);
                     }
                     finalKeywords.Sort();
+
+                    // 排除包含被排除关键字的变种
+                    bool hasExcludedCombo = false;
+                    foreach (string kw in finalKeywords)
+                    {
+                        if (excludeSet.Contains(kw)) { hasExcludedCombo = true; break; }
+                    }
+                    if (hasExcludedCombo) continue;
 
                     // 去重：基于 passType + 关键字字符串
                     string key = $"{(int)passType}|{string.Join(" ", finalKeywords)}";
