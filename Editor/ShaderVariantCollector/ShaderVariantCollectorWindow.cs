@@ -16,16 +16,27 @@ public class ShaderVariantCollectorWindow : EditorWindow
     private static string _currentPackageName = "Default";
 
     private Vector2 _scrollPos;
+    private int _currentTab = 0; // 0=收集模式, 1=裁剪配置
+
+    // 收集 tab
     private bool _showBlacklist = true;
     private bool _showFilterShaders = true;
     private bool _showLocalKeywords = true;
     private bool _showGlobalKeywords = true;
+
+    // 裁剪 tab
+    private bool _showStripRefFilterShaders = true;
+    private bool _showStripRefKeywords = true;
+    private bool _showStripAdditionalShaders = true;
+    private bool _showStripAdditionalKeywords = true;
 
     private string _newBlackScenePath = "";
     private string _newFilterShaderName = "";
     private string _newLocalShaderName = "";
     private string _newLocalKeyword = "";
     private string _newGlobalKeyword = "";
+    private string _newStripAdditionalShader = "";
+    private string _newStripAdditionalKeyword = "";
 
     // 延迟写入：在绘制阶段收集变更，绘制结束后统一应用
     private string _pendingFileName;
@@ -47,6 +58,13 @@ public class ShaderVariantCollectorWindow : EditorWindow
     private bool _pendingAddFilter;
     private bool _pendingAddLocal;
     private bool _pendingAddGlobal;
+
+    // 裁剪 tab 延迟写入
+    private string _pendingStripSVCPath;
+    private int _pendingRemoveStripAdditionalShaderIndex = -1;
+    private int _pendingRemoveStripAdditionalKeywordIndex = -1;
+    private bool _pendingAddStripAdditionalShader;
+    private bool _pendingAddStripAdditionalKeyword;
 
     private void OnGUI()
     {
@@ -71,8 +89,25 @@ public class ShaderVariantCollectorWindow : EditorWindow
         _pendingAddFilter = false;
         _pendingAddLocal = false;
         _pendingAddGlobal = false;
+        _pendingStripSVCPath = null;
+        _pendingRemoveStripAdditionalShaderIndex = -1;
+        _pendingRemoveStripAdditionalKeywordIndex = -1;
+        _pendingAddStripAdditionalShader = false;
+        _pendingAddStripAdditionalKeyword = false;
+
+        // Tab 栏
+        _currentTab = GUILayout.Toolbar(_currentTab, new[] { "收集模式", "裁剪配置" }, GUILayout.Height(28));
+        EditorGUILayout.Space(3);
 
         _scrollPos = EditorGUILayout.BeginScrollView(_scrollPos);
+
+        if (_currentTab == 1)
+        {
+            DrawStripConfigTab();
+            EditorGUILayout.EndScrollView();
+            ApplyPendingChanges();
+            return;
+        }
 
         // 收集模式下拉框
         bool analyzeMode = ShaderVariantCollectorSetting.GetAnalyzeMode(_currentPackageName);
@@ -296,6 +331,49 @@ public class ShaderVariantCollectorWindow : EditorWindow
                 _newGlobalKeyword = "";
             }
         }
+
+        // ---- 裁剪配置 ----
+        if (_pendingStripSVCPath != null)
+            ShaderVariantCollectorSetting.SetStripSVCPath(_currentPackageName, _pendingStripSVCPath);
+
+        if (_pendingRemoveStripAdditionalShaderIndex >= 0)
+        {
+            var list = ShaderVariantCollectorSetting.GetStripAdditionalShaderNames(_currentPackageName);
+            if (_pendingRemoveStripAdditionalShaderIndex < list.Count)
+            {
+                list.RemoveAt(_pendingRemoveStripAdditionalShaderIndex);
+                ShaderVariantCollectorSetting.SetStripAdditionalShaderNames(_currentPackageName, list);
+            }
+        }
+        if (_pendingRemoveStripAdditionalKeywordIndex >= 0)
+        {
+            var list = ShaderVariantCollectorSetting.GetStripAdditionalKeywords(_currentPackageName);
+            if (_pendingRemoveStripAdditionalKeywordIndex < list.Count)
+            {
+                list.RemoveAt(_pendingRemoveStripAdditionalKeywordIndex);
+                ShaderVariantCollectorSetting.SetStripAdditionalKeywords(_currentPackageName, list);
+            }
+        }
+        if (_pendingAddStripAdditionalShader)
+        {
+            var list = ShaderVariantCollectorSetting.GetStripAdditionalShaderNames(_currentPackageName);
+            if (!string.IsNullOrEmpty(_newStripAdditionalShader) && !list.Contains(_newStripAdditionalShader))
+            {
+                list.Add(_newStripAdditionalShader);
+                ShaderVariantCollectorSetting.SetStripAdditionalShaderNames(_currentPackageName, list);
+                _newStripAdditionalShader = "";
+            }
+        }
+        if (_pendingAddStripAdditionalKeyword)
+        {
+            var list = ShaderVariantCollectorSetting.GetStripAdditionalKeywords(_currentPackageName);
+            if (!string.IsNullOrEmpty(_newStripAdditionalKeyword) && !list.Contains(_newStripAdditionalKeyword))
+            {
+                list.Add(_newStripAdditionalKeyword);
+                ShaderVariantCollectorSetting.SetStripAdditionalKeywords(_currentPackageName, list);
+                _newStripAdditionalKeyword = "";
+            }
+        }
     }
 
     private string FolderPathField(string label, string currentPath)
@@ -478,6 +556,139 @@ public class ShaderVariantCollectorWindow : EditorWindow
             if (GUILayout.Button("添加", GUILayout.Width(60)))
             {
                 _pendingAddGlobal = true;
+            }
+        }
+        finally
+        {
+            EditorGUILayout.EndHorizontal();
+        }
+        EditorGUI.indentLevel--;
+    }
+
+    // ---- 裁剪配置 Tab ----
+
+    private void DrawStripConfigTab()
+    {
+        EditorGUILayout.LabelField("裁剪配置", EditorStyles.boldLabel);
+        EditorGUILayout.Space(3);
+
+        // SVC 文件夹路径
+        _pendingStripSVCPath = FolderPathField("SVC 文件夹路径", ShaderVariantCollectorSetting.GetStripSVCPath(_currentPackageName));
+
+        EditorGUILayout.Space(5);
+
+        // 只读：收集器配置的过滤着色器
+        DrawReadOnlyList("收集器 - 过滤着色器（只读）", ref _showStripRefFilterShaders,
+            ShaderVariantCollectorSetting.GetFilterShaderNames(_currentPackageName));
+
+        // 只读：收集器配置的排除关键字
+        DrawReadOnlyList("收集器 - 排除关键字（只读）", ref _showStripRefKeywords,
+            ShaderVariantCollectorSetting.GetGlobalKeywords(_currentPackageName));
+
+        EditorGUILayout.Space(5);
+
+        // 可编辑：额外裁剪着色器
+        DrawStripAdditionalShaders();
+
+        // 可编辑：额外排除关键字
+        DrawStripAdditionalKeywords();
+    }
+
+    private void DrawReadOnlyList(string label, ref bool foldout, List<string> items)
+    {
+        foldout = EditorGUILayout.Foldout(foldout, $"{label} ({items.Count})", true);
+        if (!foldout) return;
+
+        EditorGUI.indentLevel++;
+        if (items.Count == 0)
+        {
+            EditorGUILayout.LabelField("（无）", EditorStyles.miniLabel);
+        }
+        else
+        {
+            foreach (var item in items)
+            {
+                EditorGUI.BeginDisabledGroup(true);
+                EditorGUILayout.TextField(item);
+                EditorGUI.EndDisabledGroup();
+            }
+        }
+        EditorGUI.indentLevel--;
+    }
+
+    private void DrawStripAdditionalShaders()
+    {
+        _showStripAdditionalShaders = EditorGUILayout.Foldout(_showStripAdditionalShaders, "额外裁剪着色器", true);
+        if (!_showStripAdditionalShaders) return;
+
+        EditorGUI.indentLevel++;
+        List<string> names = ShaderVariantCollectorSetting.GetStripAdditionalShaderNames(_currentPackageName);
+
+        for (int i = 0; i < names.Count; i++)
+        {
+            EditorGUILayout.BeginHorizontal();
+            try
+            {
+                EditorGUILayout.LabelField(names[i]);
+                if (GUILayout.Button("X", GUILayout.Width(25)))
+                {
+                    _pendingRemoveStripAdditionalShaderIndex = i;
+                }
+            }
+            finally
+            {
+                EditorGUILayout.EndHorizontal();
+            }
+        }
+
+        EditorGUILayout.BeginHorizontal();
+        try
+        {
+            _newStripAdditionalShader = EditorGUILayout.TextField("着色器名称", _newStripAdditionalShader);
+            if (GUILayout.Button("添加", GUILayout.Width(60)))
+            {
+                _pendingAddStripAdditionalShader = true;
+            }
+        }
+        finally
+        {
+            EditorGUILayout.EndHorizontal();
+        }
+        EditorGUI.indentLevel--;
+    }
+
+    private void DrawStripAdditionalKeywords()
+    {
+        _showStripAdditionalKeywords = EditorGUILayout.Foldout(_showStripAdditionalKeywords, "额外排除关键字", true);
+        if (!_showStripAdditionalKeywords) return;
+
+        EditorGUI.indentLevel++;
+        List<string> keywords = ShaderVariantCollectorSetting.GetStripAdditionalKeywords(_currentPackageName);
+
+        for (int i = 0; i < keywords.Count; i++)
+        {
+            EditorGUILayout.BeginHorizontal();
+            try
+            {
+                EditorGUILayout.LabelField(keywords[i]);
+                if (GUILayout.Button("X", GUILayout.Width(25)))
+                {
+                    _pendingRemoveStripAdditionalKeywordIndex = i;
+                }
+            }
+            finally
+            {
+                EditorGUILayout.EndHorizontal();
+            }
+        }
+
+        EditorGUILayout.BeginHorizontal();
+        try
+        {
+            _newStripAdditionalKeyword = EditorGUILayout.TextField("关键字", _newStripAdditionalKeyword);
+            if (GUILayout.Button("添加", GUILayout.Width(60)))
+            {
+                _pendingAddStripAdditionalKeyword = true;
             }
         }
         finally

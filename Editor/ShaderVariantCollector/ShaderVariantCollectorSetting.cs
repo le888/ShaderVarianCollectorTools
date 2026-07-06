@@ -272,4 +272,48 @@ public class ShaderVariantCollectorSetting : ScriptableObject
         settings.selectedPassTypes = value ?? new List<int> { 8, 13 };
         SaveSettings(settings);
     }
+
+    // ---- 裁剪配置字段 ----
+    public string stripSVCPath = "Assets/ResourcesAB/Config/ShaderVarians";
+    public List<string> stripAdditionalShaderNames = new List<string>();
+    public List<string> stripAdditionalKeywords = new List<string>();
+
+    // 裁剪 SVC 路径
+    public static string GetStripSVCPath(string packageName)
+    {
+        return GetSettings().stripSVCPath;
+    }
+
+    public static void SetStripSVCPath(string packageName, string path)
+    {
+        ShaderVariantCollectorSetting settings = GetSettings();
+        settings.stripSVCPath = path;
+        SaveSettings(settings);
+    }
+
+    // 额外裁剪着色器
+    public static List<string> GetStripAdditionalShaderNames(string packageName)
+    {
+        return GetSettings().stripAdditionalShaderNames;
+    }
+
+    public static void SetStripAdditionalShaderNames(string packageName, List<string> names)
+    {
+        ShaderVariantCollectorSetting settings = GetSettings();
+        settings.stripAdditionalShaderNames = new List<string>(names);
+        SaveSettings(settings);
+    }
+
+    // 额外排除关键字
+    public static List<string> GetStripAdditionalKeywords(string packageName)
+    {
+        return GetSettings().stripAdditionalKeywords;
+    }
+
+    public static void SetStripAdditionalKeywords(string packageName, List<string> keywords)
+    {
+        ShaderVariantCollectorSetting settings = GetSettings();
+        settings.stripAdditionalKeywords = new List<string>(keywords);
+        SaveSettings(settings);
+    }
 }
