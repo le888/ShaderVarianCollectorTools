@@ -742,6 +742,9 @@ public class ShaderVariantCollectorWindow : EditorWindow
 
     // ---- 后处理扫描 Tab ----
 
+    private Dictionary<string, bool> _ppSelectedKeywords = new Dictionary<string, bool>();
+    private Dictionary<string, bool> _ppEffectFoldouts = new Dictionary<string, bool>();
+
     private void DrawPostProcessScanTab()
     {
         EditorGUILayout.LabelField("后处理效果扫描", EditorStyles.boldLabel);
@@ -750,6 +753,8 @@ public class ShaderVariantCollectorWindow : EditorWindow
         if (GUILayout.Button("扫描项目中的后处理", GUILayout.Height(30)))
         {
             _ppScanResult = PostProcessScanner.Scan();
+            _ppSelectedKeywords.Clear();
+            _ppEffectFoldouts.Clear();
             Debug.Log($"[后处理扫描] 扫描完成: {_ppScanResult.totalProfiles} 个 Profile, {_ppScanResult.totalComponents} 个效果组件");
         }
 
@@ -762,17 +767,71 @@ public class ShaderVariantCollectorWindow : EditorWindow
         EditorGUILayout.Space(5);
         EditorGUILayout.LabelField($"扫描结果: {_ppScanResult.totalProfiles} 个 Profile, {_ppScanResult.totalComponents} 个效果组件");
 
-        // 已使用的效果
+        // 已使用的效果（可选择关键字）
         _ppShowUsed = EditorGUILayout.Foldout(_ppShowUsed, $"已使用效果 ({_ppScanResult.usedEffects.Count})", true);
         if (_ppShowUsed)
         {
             EditorGUI.indentLevel++;
             foreach (var effect in _ppScanResult.usedEffects)
             {
-                string kwStr = effect.keywords.Count > 0 ? string.Join(", ", effect.keywords) : "（无映射）";
-                EditorGUILayout.LabelField($"  {effect.effectName}  →  {kwStr}", EditorStyles.miniLabel);
+                if (!_ppEffectFoldouts.ContainsKey(effect.effectName))
+                    _ppEffectFoldouts[effect.effectName] = false;
+
+                _ppEffectFoldouts[effect.effectName] = EditorGUILayout.Foldout(
+                    _ppEffectFoldouts[effect.effectName],
+                    $"{effect.effectName} ({effect.keywords.Count} 个关键字, 用于 {effect.profilePaths.Count} 个 Profile)",
+                    true);
+
+                if (_ppEffectFoldouts[effect.effectName])
+                {
+                    EditorGUI.indentLevel++;
+                    foreach (var kw in effect.keywords)
+                    {
+                        if (!_ppSelectedKeywords.ContainsKey(kw))
+                            _ppSelectedKeywords[kw] = false;
+
+                        EditorGUILayout.BeginHorizontal();
+                        _ppSelectedKeywords[kw] = EditorGUILayout.ToggleLeft(kw, _ppSelectedKeywords[kw]);
+                        // 显示是否已在排除列表中
+                        var existing = ShaderVariantCollectorSetting.GetStripAdditionalKeywords(_currentPackageName);
+                        if (existing.Contains(kw))
+                        {
+                            GUILayout.Label("（已在排除列表）", EditorStyles.miniLabel, GUILayout.Width(100));
+                        }
+                        EditorGUILayout.EndHorizontal();
+                    }
+                    EditorGUI.indentLevel--;
+                }
             }
             EditorGUI.indentLevel--;
+        }
+
+        // 将已使用效果中选中的关键字添加到排除列表
+        var selectedKws = new List<string>();
+        foreach (var kvp in _ppSelectedKeywords)
+        {
+            if (kvp.Value) selectedKws.Add(kvp.Key);
+        }
+        if (selectedKws.Count > 0)
+        {
+            GUI.backgroundColor = new Color(0.9f, 0.6f, 0.1f);
+            if (GUILayout.Button($"将选中的关键字添加到裁剪排除列表 ({selectedKws.Count} 个)", GUILayout.Height(25)))
+            {
+                var existing = ShaderVariantCollectorSetting.GetStripAdditionalKeywords(_currentPackageName);
+                int added = 0;
+                foreach (var kw in selectedKws)
+                {
+                    if (!existing.Contains(kw))
+                    {
+                        existing.Add(kw);
+                        added++;
+                    }
+                    _ppSelectedKeywords[kw] = false;
+                }
+                ShaderVariantCollectorSetting.SetStripAdditionalKeywords(_currentPackageName, existing);
+                Debug.Log($"[后处理扫描] 已添加 {added} 个关键字到裁剪排除列表");
+            }
+            GUI.backgroundColor = Color.white;
         }
 
         EditorGUILayout.Space(3);
@@ -792,7 +851,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
 
         EditorGUILayout.Space(5);
 
-        // 一键添加到排除关键字
+        // 一键添加所有未使用效果的关键字
         var unusedKeywords = PostProcessScanner.GetUnusedKeywords(_ppScanResult);
         if (unusedKeywords.Count > 0)
         {
