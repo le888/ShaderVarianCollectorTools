@@ -93,11 +93,6 @@ public class ShaderVariantStripper : IPreprocessShaders
                 _buildLog[shader.name].Add($"[保留][SVC收录] {key}");
                 _totalKept++;
             }
-            else
-            {
-                _buildLog[shader.name].Add($"[保留][SVC收录] {key}");
-                _totalKept++;
-            }
         }
 
         if (originalCount != data.Count)
