@@ -6,6 +6,7 @@ using UnityEngine.Rendering;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using UnityEditor.Build.Reporting;
 
 
 public class ShaderVariantStripper : IPreprocessShaders
@@ -279,7 +280,7 @@ public class ShaderVariantStripper : IPreprocessShaders
 /// <summary>
 /// 构建完成后自动写入 shader 变种日志
 /// </summary>
-public class ShaderBuildLogWriter : IPostprocessBuild
+public class ShaderBuildLogWriter : IPostprocessBuildWithReport
 {
     public int callbackOrder => 999;
 
