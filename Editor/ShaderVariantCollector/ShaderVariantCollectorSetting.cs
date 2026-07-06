@@ -7,17 +7,12 @@ public class ShaderVariantCollectorSetting : ScriptableObject
 {
     private const string DefaultSavePath = "MyShaderVariants.shadervariants";
 
-    private static string _cachedPath;
+    private static ShaderVariantCollectorSetting _cachedInstance;
 
     public static ShaderVariantCollectorSetting LoadOrCreateSettings()
     {
-        // 优先从缓存路径加载
-        if (!string.IsNullOrEmpty(_cachedPath))
-        {
-            var cached = AssetDatabase.LoadAssetAtPath<ShaderVariantCollectorSetting>(_cachedPath);
-            if (cached != null) return cached;
-            _cachedPath = null;
-        }
+        // 直接缓存实例，避免每帧重复 AssetDatabase.LoadAssetAtPath
+        if (_cachedInstance != null) return _cachedInstance;
 
         // 全局搜索项目中已有的配置文件
         string[] guids = AssetDatabase.FindAssets("t:ShaderVariantCollectorSetting");
@@ -27,7 +22,7 @@ public class ShaderVariantCollectorSetting : ScriptableObject
             ShaderVariantCollectorSetting settings = AssetDatabase.LoadAssetAtPath<ShaderVariantCollectorSetting>(path);
             if (settings != null)
             {
-                _cachedPath = path;
+                _cachedInstance = settings;
                 return settings;
             }
         }
@@ -48,7 +43,7 @@ public class ShaderVariantCollectorSetting : ScriptableObject
             AssetDatabase.CreateAsset(defaultSettings, defaultPath);
             AssetDatabase.SaveAssets();
         }
-        _cachedPath = defaultPath;
+        _cachedInstance = defaultSettings;
         return defaultSettings;
     }
 
@@ -57,9 +52,24 @@ public class ShaderVariantCollectorSetting : ScriptableObject
         return LoadOrCreateSettings();
     }
 
+    private static bool _dirty;
+    private static double _dirtyTime;
+
     public static void SaveSettings(ShaderVariantCollectorSetting settings)
     {
         EditorUtility.SetDirty(settings);
+        // 延迟保存：标记脏，0.5秒后统一写盘，避免每次操作都 SaveAssets
+        _dirty = true;
+        _dirtyTime = EditorApplication.timeSinceStartup;
+        EditorApplication.update += DeferredSave;
+    }
+
+    private static void DeferredSave()
+    {
+        if (!_dirty) { EditorApplication.update -= DeferredSave; return; }
+        if (EditorApplication.timeSinceStartup - _dirtyTime < 0.5) return;
+        _dirty = false;
+        EditorApplication.update -= DeferredSave;
         AssetDatabase.SaveAssets();
     }
 
