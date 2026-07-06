@@ -891,7 +891,6 @@ public class ShaderVariantCollectorWindow : EditorWindow
 
     private bool _showPassTypes = false;
     private string _newLightModeTag = "";
-    private int _newLightModePassType = 100;
 
     private void DrawPassTypeSelector()
     {
@@ -953,15 +952,12 @@ public class ShaderVariantCollectorWindow : EditorWindow
             ShaderVariantCollectorSetting.SetCustomLightModes(_currentPackageName, customModes);
         }
 
-        // 新增
+        // 新增（自动分配 PassType，从 100 开始递增）
         EditorGUILayout.BeginHorizontal();
-        EditorGUILayout.LabelField("LightMode", GUILayout.Width(70));
-        _newLightModeTag = EditorGUILayout.TextField(_newLightModeTag, GUILayout.MinWidth(100));
-        EditorGUILayout.LabelField("PassType", GUILayout.Width(55));
-        _newLightModePassType = EditorGUILayout.IntField(_newLightModePassType, GUILayout.Width(50));
+        _newLightModeTag = EditorGUILayout.TextField(_newLightModeTag);
         if (GUILayout.Button("添加", GUILayout.Width(45)))
         {
-            if (!string.IsNullOrEmpty(_newLightModeTag) && _newLightModePassType > 0)
+            if (!string.IsNullOrEmpty(_newLightModeTag))
             {
                 bool exists = false;
                 foreach (var m in customModes)
@@ -970,13 +966,19 @@ public class ShaderVariantCollectorWindow : EditorWindow
                 }
                 if (!exists)
                 {
-                    customModes.Add(new CustomLightModeMapping(_newLightModeTag, _newLightModePassType));
+                    // 自动分配 PassType：从 100 开始，找下一个可用值
+                    int nextPassType = 100;
+                    var usedTypes = new HashSet<int>();
+                    foreach (var m in customModes) usedTypes.Add(m.passType);
+                    while (usedTypes.Contains(nextPassType)) nextPassType++;
+
+                    customModes.Add(new CustomLightModeMapping(_newLightModeTag, nextPassType));
                     ShaderVariantCollectorSetting.SetCustomLightModes(_currentPackageName, customModes);
                     // 自动勾选新添加的 PassType
-                    selectedSet.Add(_newLightModePassType);
+                    selectedSet.Add(nextPassType);
                     _pendingSelectedPassTypes = new List<int>(selectedSet);
                     _newLightModeTag = "";
-                    _newLightModePassType = 100;
+                    Debug.Log($"已添加自定义 LightMode: {_newLightModeTag} → PassType {nextPassType}");
                 }
                 else { Debug.LogWarning($"LightMode 已存在: {_newLightModeTag}"); }
             }
