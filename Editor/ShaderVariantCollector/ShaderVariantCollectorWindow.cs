@@ -300,21 +300,29 @@ public class ShaderVariantCollectorWindow : EditorWindow
         if (_pendingAddBlack)
         {
             var list = ShaderVariantCollectorSetting.GeBlackPath(_currentPackageName);
-            if (!string.IsNullOrEmpty(_newBlackScenePath) && !list.Contains(_newBlackScenePath))
+            if (!string.IsNullOrEmpty(_newBlackScenePath))
             {
-                list.Add(_newBlackScenePath);
-                ShaderVariantCollectorSetting.SetBlackPaths(_currentPackageName, list);
-                _newBlackScenePath = "";
+                if (!list.Contains(_newBlackScenePath))
+                {
+                    list.Add(_newBlackScenePath);
+                    ShaderVariantCollectorSetting.SetBlackPaths(_currentPackageName, list);
+                    _newBlackScenePath = "";
+                }
+                else { Debug.LogWarning($"黑名单路径已存在: {_newBlackScenePath}"); }
             }
         }
         if (_pendingAddFilter)
         {
             var list = ShaderVariantCollectorSetting.GetFilterShaderNames(_currentPackageName);
-            if (!string.IsNullOrEmpty(_newFilterShaderName) && !list.Contains(_newFilterShaderName))
+            if (!string.IsNullOrEmpty(_newFilterShaderName))
             {
-                list.Add(_newFilterShaderName);
-                ShaderVariantCollectorSetting.SetFilterShaderNames(_currentPackageName, list);
-                _newFilterShaderName = "";
+                if (!list.Contains(_newFilterShaderName))
+                {
+                    list.Add(_newFilterShaderName);
+                    ShaderVariantCollectorSetting.SetFilterShaderNames(_currentPackageName, list);
+                    _newFilterShaderName = "";
+                }
+                else { Debug.LogWarning($"过滤着色器已存在: {_newFilterShaderName}"); }
             }
         }
         if (_pendingAddLocal)
@@ -331,11 +339,18 @@ public class ShaderVariantCollectorWindow : EditorWindow
         if (_pendingAddGlobal)
         {
             var list = ShaderVariantCollectorSetting.GetGlobalKeywords(_currentPackageName);
-            if (!string.IsNullOrEmpty(_newGlobalKeyword) && !list.Contains(_newGlobalKeyword))
+            if (!string.IsNullOrEmpty(_newGlobalKeyword))
             {
-                list.Add(_newGlobalKeyword);
-                ShaderVariantCollectorSetting.SetGlobalKeywords(_currentPackageName, list);
-                _newGlobalKeyword = "";
+                if (!list.Contains(_newGlobalKeyword))
+                {
+                    list.Add(_newGlobalKeyword);
+                    ShaderVariantCollectorSetting.SetGlobalKeywords(_currentPackageName, list);
+                    _newGlobalKeyword = "";
+                }
+                else
+                {
+                    Debug.LogWarning($"排除关键字已存在: {_newGlobalKeyword}");
+                }
             }
         }
 
@@ -364,21 +379,29 @@ public class ShaderVariantCollectorWindow : EditorWindow
         if (_pendingAddStripAdditionalShader)
         {
             var list = ShaderVariantCollectorSetting.GetStripAdditionalShaderNames(_currentPackageName);
-            if (!string.IsNullOrEmpty(_newStripAdditionalShader) && !list.Contains(_newStripAdditionalShader))
+            if (!string.IsNullOrEmpty(_newStripAdditionalShader))
             {
-                list.Add(_newStripAdditionalShader);
-                ShaderVariantCollectorSetting.SetStripAdditionalShaderNames(_currentPackageName, list);
-                _newStripAdditionalShader = "";
+                if (!list.Contains(_newStripAdditionalShader))
+                {
+                    list.Add(_newStripAdditionalShader);
+                    ShaderVariantCollectorSetting.SetStripAdditionalShaderNames(_currentPackageName, list);
+                    _newStripAdditionalShader = "";
+                }
+                else { Debug.LogWarning($"额外裁剪着色器已存在: {_newStripAdditionalShader}"); }
             }
         }
         if (_pendingAddStripAdditionalKeyword)
         {
             var list = ShaderVariantCollectorSetting.GetStripAdditionalKeywords(_currentPackageName);
-            if (!string.IsNullOrEmpty(_newStripAdditionalKeyword) && !list.Contains(_newStripAdditionalKeyword))
+            if (!string.IsNullOrEmpty(_newStripAdditionalKeyword))
             {
-                list.Add(_newStripAdditionalKeyword);
-                ShaderVariantCollectorSetting.SetStripAdditionalKeywords(_currentPackageName, list);
-                _newStripAdditionalKeyword = "";
+                if (!list.Contains(_newStripAdditionalKeyword))
+                {
+                    list.Add(_newStripAdditionalKeyword);
+                    ShaderVariantCollectorSetting.SetStripAdditionalKeywords(_currentPackageName, list);
+                    _newStripAdditionalKeyword = "";
+                }
+                else { Debug.LogWarning($"额外排除关键字已存在: {_newStripAdditionalKeyword}"); }
             }
         }
     }
