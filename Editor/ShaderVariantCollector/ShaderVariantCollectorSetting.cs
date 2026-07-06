@@ -6,24 +6,49 @@ public class ShaderVariantCollectorSetting : ScriptableObject
 {
     private const string DefaultSavePath = "MyShaderVariants.shadervariants";
 
+    private static string _cachedPath;
+
     public static ShaderVariantCollectorSetting LoadOrCreateSettings()
     {
+        // 优先从缓存路径加载
+        if (!string.IsNullOrEmpty(_cachedPath))
+        {
+            var cached = AssetDatabase.LoadAssetAtPath<ShaderVariantCollectorSetting>(_cachedPath);
+            if (cached != null) return cached;
+            _cachedPath = null;
+        }
+
+        // 全局搜索项目中已有的配置文件
+        string[] guids = AssetDatabase.FindAssets("t:ShaderVariantCollectorSetting");
+        foreach (string guid in guids)
+        {
+            string path = AssetDatabase.GUIDToAssetPath(guid);
+            ShaderVariantCollectorSetting settings = AssetDatabase.LoadAssetAtPath<ShaderVariantCollectorSetting>(path);
+            if (settings != null)
+            {
+                _cachedPath = path;
+                return settings;
+            }
+        }
+
+        // 全局没有，使用代码位置的默认路径
         string configFolder = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(AssetDatabase.GetAssetPath(MonoScript.FromScriptableObject(ScriptableObject.CreateInstance<ShaderVariantCollectorSetting>()))), "config");
         if (!System.IO.Directory.Exists(configFolder))
         {
             System.IO.Directory.CreateDirectory(configFolder);
             AssetDatabase.Refresh();
         }
-        
-        string path = System.IO.Path.Combine(configFolder, "ShaderVariantCollectorSetting.asset");
-        ShaderVariantCollectorSetting settings = AssetDatabase.LoadAssetAtPath<ShaderVariantCollectorSetting>(path);
-        if (settings == null)
+
+        string defaultPath = System.IO.Path.Combine(configFolder, "ShaderVariantCollectorSetting.asset");
+        ShaderVariantCollectorSetting defaultSettings = AssetDatabase.LoadAssetAtPath<ShaderVariantCollectorSetting>(defaultPath);
+        if (defaultSettings == null)
         {
-            settings = ScriptableObject.CreateInstance<ShaderVariantCollectorSetting>();
-            AssetDatabase.CreateAsset(settings, path);
+            defaultSettings = ScriptableObject.CreateInstance<ShaderVariantCollectorSetting>();
+            AssetDatabase.CreateAsset(defaultSettings, defaultPath);
             AssetDatabase.SaveAssets();
         }
-        return settings;
+        _cachedPath = defaultPath;
+        return defaultSettings;
     }
 
     public static ShaderVariantCollectorSetting GetSettings()
