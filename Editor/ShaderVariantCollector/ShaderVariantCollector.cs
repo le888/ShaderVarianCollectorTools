@@ -2040,24 +2040,48 @@ public static class ShaderVariantCollector
                             }
                             else
                             {
-                                var passType = LightModeToPassType(passTags);
                                 var groups = ParseMultiCompileFromLines(lines, passStartLine, i);
                                 var allKeywords = ParseAllKeywordsFromLines(lines, passStartLine, i);
-                                if ((int)passType == -1)
+
+                                // 先检查是否在自定义映射中配置了
+                                bool hasCustomMapping = false;
+                                var customMappings = ShaderVariantCollectorSetting.GetCustomLightModes(_currentPackageName);
+                                foreach (var m in customMappings)
                                 {
-                                    Debug.LogWarning($"[Shader变种收集] {shaderPath} 第{passStartLine + 1}行: Pass LightMode=\"{passTags}\" 未在 LightModeToPassType 中映射。将基于材质关键字注入变种（声明关键字 {allKeywords.Count} 个）。");
+                                    if (m.lightModeTag == passTags) { hasCustomMapping = true; break; }
+                                }
+
+                                if (hasCustomMapping)
+                                {
+                                    // 配置了自定义映射 → 标记为 passType -1，走注入逻辑
+                                    Debug.Log($"[GetMultiCompileGroupsByPass] 行{passStartLine+1}-{i+1}: 自定义pass LightMode=\"{passTags}\" 已配置映射，将注入变种（声明关键字 {allKeywords.Count} 个）。");
+                                    passes.Add(new PassInfo
+                                    {
+                                        Name = passTags,
+                                        PassType = (PassType)(-1),
+                                        Groups = groups,
+                                        AllKeywords = allKeywords
+                                    });
                                 }
                                 else
                                 {
-                                    Debug.Log($"[GetMultiCompileGroupsByPass] 行{passStartLine+1}-{i+1}: 添加pass LightMode=\"{passTags}\" passType={passType} groups={groups.Count} allKeywords={allKeywords.Count}");
+                                    var passType = LightModeToPassType(passTags);
+                                    if ((int)passType == -1)
+                                    {
+                                        Debug.LogWarning($"[Shader变种收集] {shaderPath} 第{passStartLine + 1}行: Pass LightMode=\"{passTags}\" 未在自定义映射中配置，已跳过。请在设置面板的自定义 LightMode 映射中添加 \"{passTags}\"。");
+                                    }
+                                    else
+                                    {
+                                        Debug.Log($"[GetMultiCompileGroupsByPass] 行{passStartLine+1}-{i+1}: 添加pass LightMode=\"{passTags}\" passType={passType} groups={groups.Count} allKeywords={allKeywords.Count}");
+                                        passes.Add(new PassInfo
+                                        {
+                                            Name = passTags,
+                                            PassType = passType,
+                                            Groups = groups,
+                                            AllKeywords = allKeywords
+                                        });
+                                    }
                                 }
-                                passes.Add(new PassInfo
-                                {
-                                    Name = passTags,
-                                    PassType = passType,
-                                    Groups = groups,
-                                    AllKeywords = allKeywords
-                                });
                             }
                             passStartLine = -1;
                             passBraceStart = -1;
