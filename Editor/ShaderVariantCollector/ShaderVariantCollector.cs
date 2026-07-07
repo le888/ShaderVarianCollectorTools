@@ -1498,7 +1498,7 @@ public static class ShaderVariantCollector
 
     /// <summary>
     /// 向 manifest 中注入 multi_compile 变种
-    /// 策略：解析 shader 中所有 multi_compile 组，去掉组关键字得到基础变种，再重新排列组合
+    /// 策略：按 pass 解析 shader 中的 multi_compile 组，去掉组关键字得到基础变种，再按 pass 重新排列组合
     /// 无组关键字的变种（如 ShadowCaster）直接保留
     /// </summary>
     private static void AddGlobalKeywordVariantsToManifest(ShaderVariantCollectionManifest wrapper, List<string> excludeKeywords, HashSet<string> materialKeywords = null)
@@ -1509,43 +1509,56 @@ public static class ShaderVariantCollector
         foreach (var shaderInfo in wrapper.ShaderVariantInfos)
         {
             string shaderPath = shaderInfo.AssetPath;
-            List<HashSet<string>> allGroups = GetMultiCompileGroups(shaderPath);
             HashSet<string> shaderGlobalKeywords = GetShaderSupportedKeywords(shaderPath);
 
-            // 过滤掉包含排除关键字的组，并裁剪每组只保留材质实际启用且 shader 支持的关键字
-            var processGroups = new List<HashSet<string>>();
-            foreach (var group in allGroups)
+            // 按 pass 解析 multi_compile 组，构建 passType → groups 映射
+            var allPassInfos = GetMultiCompileGroupsByPass(shaderPath);
+            Debug.Log($"[变种重组] {shaderInfo.ShaderName}: shaderPath={shaderPath}, 文件存在={File.Exists(shaderPath)}, 解析pass数={allPassInfos.Count}");
+            var passTypeToGroups = new Dictionary<int, List<HashSet<string>>>();
+            foreach (var passInfo in allPassInfos)
             {
-                bool excluded = false;
-                foreach (string kw in group)
+                var filtered = new List<HashSet<string>>();
+                foreach (var group in passInfo.Groups)
                 {
-                    if (excludeSet.Contains(kw))
+                    bool excluded = false;
+                    foreach (string kw in group)
                     {
-                        excluded = true;
-                        break;
+                        if (excludeSet.Contains(kw)) { excluded = true; break; }
                     }
-                }
-                if (excluded) continue;
+                    if (excluded) continue;
 
-                var filtered = new HashSet<string>();
-                foreach (string kw in group)
-                {
-                    if (shaderGlobalKeywords.Contains(kw) && (materialKeywords == null || materialKeywords.Contains(kw)))
-                        filtered.Add(kw);
+                    var groupFiltered = new HashSet<string>();
+                    foreach (string kw in group)
+                    {
+                        if (shaderGlobalKeywords.Contains(kw) && (materialKeywords == null || materialKeywords.Contains(kw)))
+                            groupFiltered.Add(kw);
+                    }
+                    if (groupFiltered.Count >= 1)
+                        filtered.Add(groupFiltered);
                 }
-                if (filtered.Count >= 1)
-                    processGroups.Add(filtered);
+                passTypeToGroups[(int)passInfo.PassType] = filtered;
             }
-
-            var allGroupKeywords = new HashSet<string>();
-            foreach (var group in processGroups)
-                allGroupKeywords.UnionWith(group);
 
             // 收集已有变种（快照）
             var existingVariants = new List<(PassType passType, string[] keywords)>();
             foreach (var variant in shaderInfo.ShaderVariantElements)
             {
                 existingVariants.Add((variant.PassType, variant.Keywords));
+            }
+
+            Debug.Log($"[变种重组] {shaderInfo.ShaderName}: 已有变种={existingVariants.Count}, pass组数={passTypeToGroups.Count}");
+            foreach (var kvp in passTypeToGroups)
+            {
+                var groupStrs = new List<string>();
+                foreach (var g in kvp.Value)
+                    groupStrs.Add("{" + string.Join(",", g) + "}");
+                Debug.Log($"  passType={kvp.Key}: {string.Join(" | ", groupStrs)}");
+            }
+            // 打印前 5 个已有变种用于调试
+            for (int vi = 0; vi < Mathf.Min(5, existingVariants.Count); vi++)
+            {
+                var v = existingVariants[vi];
+                Debug.Log($"  已有变种[{vi}]: passType={(int)v.passType} keywords=[{string.Join(", ", v.keywords)}]");
             }
 
             // 清空变种列表，重新构建
@@ -1555,21 +1568,29 @@ public static class ShaderVariantCollector
 
             foreach (var (passType, baseKeywords) in existingVariants)
             {
-                // 第一步：去掉组中的关键字，得到基础关键字（trim 并过滤空串）
+                // 获取当前 pass 的组（没有则跳过重组，直接保留原始变种）
+                if (!passTypeToGroups.TryGetValue((int)passType, out var currentPassGroups))
+                    currentPassGroups = new List<HashSet<string>>();
+
+                var currentPassGroupKeywords = new HashSet<string>();
+                foreach (var group in currentPassGroups)
+                    currentPassGroupKeywords.UnionWith(group);
+
+                // 第一步：去掉当前 pass 组中的关键字，得到基础关键字（trim 并过滤空串）
                 var cleanKeywords = new List<string>();
                 foreach (string kw in baseKeywords)
                 {
                     string trimmed = kw.Trim();
-                    if (!string.IsNullOrEmpty(trimmed) && !allGroupKeywords.Contains(trimmed))
+                    if (!string.IsNullOrEmpty(trimmed) && !currentPassGroupKeywords.Contains(trimmed))
                         cleanKeywords.Add(trimmed);
                 }
                 cleanKeywords.Sort();
 
-                // 检查原始变种是否包含组关键字
+                // 检查原始变种是否包含当前 pass 的组关键字
                 bool hasGroupKeyword = false;
                 foreach (string kw in baseKeywords)
                 {
-                    if (allGroupKeywords.Contains(kw.Trim()))
+                    if (currentPassGroupKeywords.Contains(kw.Trim()))
                     {
                         hasGroupKeyword = true;
                         break;
@@ -1604,7 +1625,7 @@ public static class ShaderVariantCollector
                 }
 
                 // 第二步：用当前 pass 的组关键字重新排列组合（笛卡尔积）
-                var combinations = GenerateGroupCombinations(processGroups);
+                var combinations = GenerateGroupCombinations(currentPassGroups);
 
                 foreach (var combo in combinations)
                 {
@@ -1639,6 +1660,8 @@ public static class ShaderVariantCollector
                     addedCount++;
                 }
             }
+
+            Debug.Log($"[变种重组] {shaderInfo.ShaderName}: 重组后变种数={shaderInfo.ShaderVariantCount}");
         }
 
         if (addedCount > 0)
@@ -1699,6 +1722,7 @@ public static class ShaderVariantCollector
 
     /// <summary>
     /// 从 shader 源码解析所有 #pragma multi_compile 声明的互斥关键字组（不区分 pass）
+    /// 只解析 multi_compile（全局），跳过 multi_compile_local（局部）
     /// </summary>
     private static List<HashSet<string>> GetMultiCompileGroups(string shaderPath)
     {
@@ -1714,14 +1738,14 @@ public static class ShaderVariantCollector
             {
                 string trimmed = line.Trim();
                 if (IsCommentLine(trimmed)) continue;
-                if (!trimmed.StartsWith("#pragma multi_compile")) continue;
+                if (!IsMultiCompileDirective(trimmed)) continue;
 
                 string[] parts = trimmed.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
                 var keywords = new HashSet<string>();
-                for (int i = 1; i < parts.Length; i++)
+                for (int i = 2; i < parts.Length; i++)
                 {
                     string kw = parts[i].Trim();
-                    if (!string.IsNullOrEmpty(kw) && kw != "_" && !kw.StartsWith("multi_compile"))
+                    if (!string.IsNullOrEmpty(kw) && kw != "_")
                         keywords.Add(kw);
                 }
                 if (keywords.Count >= 1)
@@ -1756,6 +1780,7 @@ public static class ShaderVariantCollector
         {
             string source = File.ReadAllText(shaderPath);
             var lines = source.Split('\n');
+            Debug.Log($"[GetMultiCompileGroupsByPass] {shaderPath}: 共 {lines.Length} 行");
 
             int braceDepth = 0;
             int passStartLine = -1;
@@ -1775,6 +1800,7 @@ public static class ShaderVariantCollector
                     passTags = "";
                     if (trimmed == "Pass {")
                         passBraceStart = braceDepth;
+                    Debug.Log($"[GetMultiCompileGroupsByPass] 行{i+1}: 发现Pass, trimmed=\"{trimmed}\", braceDepth={braceDepth}");
                 }
 
                 // 追踪花括号深度
@@ -1792,13 +1818,29 @@ public static class ShaderVariantCollector
                         // Pass 块结束
                         if (passStartLine >= 0 && passBraceStart >= 0 && braceDepth < passBraceStart)
                         {
-                            var groups = ParseMultiCompileFromLines(lines, passStartLine, i);
-                            passes.Add(new PassInfo
+                            if (string.IsNullOrEmpty(passTags))
                             {
-                                Name = passTags,
-                                PassType = LightModeToPassType(passTags),
-                                Groups = groups
-                            });
+                                Debug.LogWarning($"[Shader变种收集] {shaderPath} 第{passStartLine + 1}行: Pass 缺少 LightMode 标签，已跳过。请为该 Pass 添加 Tags {{ \"LightMode\" = \"xxx\" }} 以确保变种正确收集。");
+                            }
+                            else
+                            {
+                                var passType = LightModeToPassType(passTags);
+                                if ((int)passType == -1)
+                                {
+                                    Debug.LogWarning($"[Shader变种收集] {shaderPath} 第{passStartLine + 1}行: Pass LightMode=\"{passTags}\" 未在 LightModeToPassType 中映射，已跳过。请在自定义 LightMode 映射中添加 \"{passTags}\" 或联系工具维护者。");
+                                }
+                                else
+                                {
+                                    var groups = ParseMultiCompileFromLines(lines, passStartLine, i);
+                                    passes.Add(new PassInfo
+                                    {
+                                        Name = passTags,
+                                        PassType = passType,
+                                        Groups = groups
+                                    });
+                                    Debug.Log($"[GetMultiCompileGroupsByPass] 行{passStartLine+1}-{i+1}: 添加pass LightMode=\"{passTags}\" passType={passType} groups={groups.Count}");
+                                }
+                            }
                             passStartLine = -1;
                             passBraceStart = -1;
                             passTags = "";
@@ -1806,8 +1848,8 @@ public static class ShaderVariantCollector
                     }
                 }
 
-                // 收集 Pass 内的 Tags
-                if (passStartLine >= 0 && (trimmed.StartsWith("LightMode") || trimmed.StartsWith("\"LightMode\"")))
+                // 收集 Pass 内的 Tags（支持 Tags{"LightMode" = "xxx"} 写在同一行的情况）
+                if (passStartLine >= 0 && trimmed.Contains("LightMode"))
                 {
                     passTags = ExtractFirstQuotedValue(trimmed);
                 }
@@ -1828,14 +1870,14 @@ public static class ShaderVariantCollector
         {
             string trimmed = lines[i].Trim();
             if (IsCommentLine(trimmed)) continue;
-            if (!trimmed.StartsWith("#pragma multi_compile")) continue;
+            if (!IsMultiCompileDirective(trimmed)) continue;
 
             string[] parts = trimmed.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
             var keywords = new HashSet<string>();
-            for (int j = 1; j < parts.Length; j++)
+            for (int j = 2; j < parts.Length; j++)
             {
                 string kw = parts[j].Trim();
-                if (!string.IsNullOrEmpty(kw) && kw != "_" && !kw.StartsWith("multi_compile"))
+                if (!string.IsNullOrEmpty(kw) && kw != "_")
                     keywords.Add(kw);
             }
             if (keywords.Count >= 1)
@@ -1911,8 +1953,17 @@ public static class ShaderVariantCollector
                         {
                             if (currentLightMode != null)
                             {
-                                passTypes.Add(LightModeToPassType(currentLightMode));
-                                debugLog?.AppendLine($"    [pass解析] 行{lineNum}: pass 块结束, LightMode={currentLightMode}, passType={LightModeToPassType(currentLightMode)}");
+                                var passType = LightModeToPassType(currentLightMode);
+                                if ((int)passType != -1)
+                                {
+                                    passTypes.Add(passType);
+                                    debugLog?.AppendLine($"    [pass解析] 行{lineNum}: pass 块结束, LightMode={currentLightMode}, passType={passType}");
+                                }
+                                else
+                                {
+                                    Debug.LogWarning($"[Shader变种收集] {shaderPath} 行{lineNum}: Pass LightMode=\"{currentLightMode}\" 未在 LightModeToPassType 中映射，已跳过。");
+                                    debugLog?.AppendLine($"    [pass解析] 行{lineNum}: pass 块结束, LightMode={currentLightMode}, 未映射已跳过");
+                                }
                             }
                             else
                             {
@@ -1925,7 +1976,7 @@ public static class ShaderVariantCollector
                     }
                 }
 
-                if (passStartDepth >= 0 && (trimmed.StartsWith("LightMode") || trimmed.StartsWith("\"LightMode\"")))
+                if (passStartDepth >= 0 && trimmed.Contains("LightMode"))
                 {
                     currentLightMode = ExtractFirstQuotedValue(trimmed);
                     debugLog?.AppendLine($"    [pass解析] 行{lineNum}: LightMode={currentLightMode}");
@@ -2081,7 +2132,7 @@ public static class ShaderVariantCollector
                 }
 
                 // 检测 LightMode 标签
-                if (passStartDepth >= 0 && (trimmed.StartsWith("LightMode") || trimmed.StartsWith("\"LightMode\"")))
+                if (passStartDepth >= 0 && trimmed.Contains("LightMode"))
                 {
                     currentLightMode = ExtractFirstQuotedValue(trimmed);
                     if (currentLightMode == lightModeTag || lightModeTag == null)
@@ -2133,7 +2184,21 @@ public static class ShaderVariantCollector
         return false;
     }
 
+    /// <summary>
+    /// 检查行是否是 multi_compile 声明（包括 multi_compile_local，排除 multi_compile_fragment 等后缀变体）
+    /// multi_compile_local 是 shader 级关键字，所有使用该 shader 的材质都可能开启，需要参与组合
+    /// </summary>
+    private static bool IsMultiCompileDirective(string trimmed)
+    {
+        if (!trimmed.StartsWith("#pragma ")) return false;
+        string[] parts = trimmed.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2) return false;
+        // 匹配 "multi_compile" 和 "multi_compile_local"，排除 "multi_compile_fragment" 等
+        return parts[1] == "multi_compile" || parts[1] == "multi_compile_local";
+    }
+
     // passType 值来自渲染收集的 SVC 文件（与 Unity PassType 枚举不一致）
+    // 未知的 LightMode 返回 -1，调用方需要处理
     private static PassType LightModeToPassType(string lightMode)
     {
         // 先检查自定义映射
@@ -2163,7 +2228,7 @@ public static class ShaderVariantCollector
             case "Vertex": return PassType.Vertex;
             case "VertexLMRGBM": return PassType.VertexLMRGBM;
             case "VertexLM": return PassType.VertexLM;
-            default: return (PassType)13;
+            default: return (PassType)(-1);
         }
     }
 
