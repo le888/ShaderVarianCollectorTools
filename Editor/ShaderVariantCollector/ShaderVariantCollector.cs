@@ -326,6 +326,7 @@ public static class ShaderVariantCollector
 
             bool isShaderGraph = shaderPath.EndsWith(".shadergraph") || shaderPath.EndsWith(".shadersubgraph");
             List<PassInfo> passInfos;
+            List<PassInfo> allPassInfos = new List<PassInfo>();
 
             if (isShaderGraph)
             {
@@ -338,7 +339,7 @@ public static class ShaderVariantCollector
             }
             else
             {
-                var allPassInfos = GetMultiCompileGroupsByPass(shaderPath);
+                allPassInfos = GetMultiCompileGroupsByPass(shaderPath);
                 var selectedPassTypes = new HashSet<int>(ShaderVariantCollectorSetting.GetSelectedPassTypes(_scanPackageName));
                 passInfos = new List<PassInfo>();
                 foreach (var p in allPassInfos)
@@ -433,6 +434,115 @@ public static class ShaderVariantCollector
                                 Keywords = finalKeywords.ToArray()
                             });
                         }
+                    }
+                }
+
+                shaderInfo.ShaderVariantCount = shaderInfo.ShaderVariantElements.Count;
+
+                // ---- 自定义 pass 关键字注入（分析模式）----
+                var customPassesAnalyze = new List<PassInfo>();
+                foreach (var p in allPassInfos)
+                {
+                    if ((int)p.PassType == -1)
+                        customPassesAnalyze.Add(p);
+                }
+
+                if (customPassesAnalyze.Count > 0)
+                {
+                    var defaultPassKeywords = new HashSet<string>();
+                    foreach (var elem in shaderInfo.ShaderVariantElements)
+                    {
+                        if ((int)elem.PassType == 0 || (int)elem.PassType == 13)
+                        {
+                            foreach (string kw in elem.Keywords)
+                            {
+                                if (!string.IsNullOrEmpty(kw))
+                                    defaultPassKeywords.Add(kw.Trim());
+                            }
+                        }
+                    }
+
+                    var seenVariants = new HashSet<string>();
+                    foreach (var elem in shaderInfo.ShaderVariantElements)
+                    {
+                        seenVariants.Add($"{(int)elem.PassType}|{string.Join(" ", elem.Keywords)}");
+                    }
+
+                    foreach (var customPass in customPassesAnalyze)
+                    {
+                        var customGroups = new List<HashSet<string>>();
+                        foreach (var group in customPass.Groups)
+                        {
+                            bool excluded = false;
+                            foreach (string kw in group)
+                            {
+                                if (_genExcludeKeywords.Contains(kw)) { excluded = true; break; }
+                            }
+                            if (excluded) continue;
+
+                            var filtered = new HashSet<string>();
+                            foreach (string kw in group)
+                            {
+                                if (defaultPassKeywords.Contains(kw))
+                                    filtered.Add(kw);
+                            }
+                            if (filtered.Count >= 1)
+                                customGroups.Add(filtered);
+                        }
+
+                        if (customGroups.Count == 0) continue;
+
+                        var customGroupKeywords = new HashSet<string>();
+                        foreach (var group in customGroups)
+                            customGroupKeywords.UnionWith(group);
+
+                        var combinations = GenerateGroupCombinations(customGroups);
+
+                        var currentElements = new List<ShaderVariantCollectionManifest.ShaderVariantElement>(shaderInfo.ShaderVariantElements);
+                        int customAdded = 0;
+
+                        foreach (var elem in currentElements)
+                        {
+                            if ((int)elem.PassType != 0 && (int)elem.PassType != 13)
+                                continue;
+
+                            var baseKws = new List<string>();
+                            foreach (string kw in elem.Keywords)
+                            {
+                                string trimmed = kw.Trim();
+                                if (!string.IsNullOrEmpty(trimmed) && !customGroupKeywords.Contains(trimmed))
+                                    baseKws.Add(trimmed);
+                            }
+                            baseKws.Sort();
+
+                            foreach (var combo in combinations)
+                            {
+                                if (combo.Count == 0) continue;
+
+                                var finalKws = new List<string>(baseKws);
+                                foreach (string kw in combo)
+                                {
+                                    string trimmed = kw.Trim();
+                                    if (!string.IsNullOrEmpty(trimmed))
+                                        finalKws.Add(trimmed);
+                                }
+                                finalKws.Sort();
+
+                                string key = $"{(int)elem.PassType}|{string.Join(" ", finalKws)}";
+                                if (seenVariants.Contains(key)) continue;
+                                seenVariants.Add(key);
+
+                                shaderInfo.ShaderVariantElements.Add(new ShaderVariantCollectionManifest.ShaderVariantElement
+                                {
+                                    PassType = elem.PassType,
+                                    Keywords = finalKws.ToArray()
+                                });
+                                customAdded++;
+                            }
+                        }
+
+                        if (customAdded > 0)
+                            Debug.Log($"[分析模式][自定义pass注入] {shader.name} LightMode=\"{customPass.Name}\": 注入 {customAdded} 个变种");
                     }
                 }
 
@@ -1517,6 +1627,7 @@ public static class ShaderVariantCollector
             var passTypeToGroups = new Dictionary<int, List<HashSet<string>>>();
             foreach (var passInfo in allPassInfos)
             {
+                if ((int)passInfo.PassType == -1) continue; // 自定义 pass 单独处理
                 var filtered = new List<HashSet<string>>();
                 foreach (var group in passInfo.Groups)
                 {
@@ -1662,6 +1773,125 @@ public static class ShaderVariantCollector
             }
 
             Debug.Log($"[变种重组] {shaderInfo.ShaderName}: 重组后变种数={shaderInfo.ShaderVariantCount}");
+
+            // ---- 自定义 pass 关键字注入 ----
+            // 自定义 pass（LightMode 不在标准映射中）无法单独收集变种，
+            // 将其声明的关键字注入到默认 pass（passType 0）的变种组合中，
+            // 避免构建时被裁剪。
+            var customPasses = new List<PassInfo>();
+            foreach (var passInfo in allPassInfos)
+            {
+                if ((int)passInfo.PassType == -1)
+                    customPasses.Add(passInfo);
+            }
+
+            if (customPasses.Count > 0)
+            {
+                // 收集默认 pass（passType 0 和 13）已有变种中的材质关键字
+                var defaultPassKeywords = new HashSet<string>();
+                foreach (var variant in shaderInfo.ShaderVariantElements)
+                {
+                    if ((int)variant.PassType == 0 || (int)variant.PassType == 13)
+                    {
+                        foreach (string kw in variant.Keywords)
+                        {
+                            if (!string.IsNullOrEmpty(kw))
+                                defaultPassKeywords.Add(kw.Trim());
+                        }
+                    }
+                }
+
+                int customAdded = 0;
+                foreach (var customPass in customPasses)
+                {
+                    // 解析自定义 pass 声明的关键字（multi_compile + shader_feature_local）
+                    var customGroups = new List<HashSet<string>>();
+                    foreach (var group in customPass.Groups)
+                    {
+                        bool excluded = false;
+                        foreach (string kw in group)
+                        {
+                            if (excludeSet.Contains(kw)) { excluded = true; break; }
+                        }
+                        if (excluded) continue;
+
+                        // 只保留在默认 pass 材质关键字中出现的（说明材质实际开启了）
+                        var filtered = new HashSet<string>();
+                        foreach (string kw in group)
+                        {
+                            if (shaderGlobalKeywords.Contains(kw) && defaultPassKeywords.Contains(kw))
+                                filtered.Add(kw);
+                        }
+                        if (filtered.Count >= 1)
+                            customGroups.Add(filtered);
+                    }
+
+                    if (customGroups.Count == 0) continue;
+
+                    var customGroupKeywords = new HashSet<string>();
+                    foreach (var group in customGroups)
+                        customGroupKeywords.UnionWith(group);
+
+                    var combinations = GenerateGroupCombinations(customGroups);
+
+                    // 为默认 pass 的每个已有变种，追加自定义 pass 的关键字组合
+                    var currentVariants = new List<(PassType passType, string[] keywords)>();
+                    foreach (var variant in shaderInfo.ShaderVariantElements)
+                        currentVariants.Add((variant.PassType, variant.Keywords));
+
+                    foreach (var variant in currentVariants)
+                    {
+                        // 只处理默认 pass
+                        if ((int)variant.passType != 0 && (int)variant.passType != 13)
+                            continue;
+
+                        var baseKws = new List<string>();
+                        foreach (string kw in variant.keywords)
+                        {
+                            string trimmed = kw.Trim();
+                            if (!string.IsNullOrEmpty(trimmed) && !customGroupKeywords.Contains(trimmed))
+                                baseKws.Add(trimmed);
+                        }
+                        baseKws.Sort();
+
+                        foreach (var combo in combinations)
+                        {
+                            if (combo.Count == 0) continue; // 跳过空组合（已由原始变种覆盖）
+
+                            var finalKws = new List<string>(baseKws);
+                            foreach (string kw in combo)
+                            {
+                                string trimmed = kw.Trim();
+                                if (!string.IsNullOrEmpty(trimmed))
+                                    finalKws.Add(trimmed);
+                            }
+                            finalKws.Sort();
+
+                            bool hasExcluded = false;
+                            foreach (string kw in finalKws)
+                            {
+                                if (excludeSet.Contains(kw)) { hasExcluded = true; break; }
+                            }
+                            if (hasExcluded) continue;
+
+                            string key = $"{(int)variant.passType}|{string.Join(" ", finalKws)}";
+                            if (seenVariants.Contains(key)) continue;
+                            seenVariants.Add(key);
+
+                            shaderInfo.ShaderVariantElements.Add(new ShaderVariantCollectionManifest.ShaderVariantElement
+                            {
+                                PassType = variant.passType,
+                                Keywords = finalKws.ToArray()
+                            });
+                            shaderInfo.ShaderVariantCount++;
+                            addedCount++;
+                            customAdded++;
+                        }
+                    }
+
+                    Debug.Log($"[自定义pass注入] {shaderInfo.ShaderName} LightMode=\"{customPass.Name}\": 注入 {customAdded} 个变种");
+                }
+            }
         }
 
         if (addedCount > 0)
@@ -1827,7 +2057,14 @@ public static class ShaderVariantCollector
                                 var passType = LightModeToPassType(passTags);
                                 if ((int)passType == -1)
                                 {
-                                    Debug.LogWarning($"[Shader变种收集] {shaderPath} 第{passStartLine + 1}行: Pass LightMode=\"{passTags}\" 未在 LightModeToPassType 中映射，已跳过。请在自定义 LightMode 映射中添加 \"{passTags}\" 或联系工具维护者。");
+                                    Debug.LogWarning($"[Shader变种收集] {shaderPath} 第{passStartLine + 1}行: Pass LightMode=\"{passTags}\" 未在 LightModeToPassType 中映射。将基于默认 pass 材质关键字注入变种。");
+                                    var groups = ParseMultiCompileFromLines(lines, passStartLine, i);
+                                    passes.Add(new PassInfo
+                                    {
+                                        Name = passTags,
+                                        PassType = passType,
+                                        Groups = groups
+                                    });
                                 }
                                 else
                                 {
@@ -2211,14 +2448,14 @@ public static class ShaderVariantCollector
 
         switch (lightMode)
         {
-            // URP pass — 真实 passType 值（从 SVC 确认）
+            // URP pass — 真实 passType 值（从构建日志确认）
             case "UniversalForward":
             case "UniversalForwardOnly": return (PassType)13;
             case "UniversalGBuffer": return (PassType)14;
-            case "DepthOnly": return (PassType)15;
+            case "DepthOnly": return (PassType)100;
             case "DepthNormals": return (PassType)16;
             case "Universal2D": return (PassType)17;
-            case "ShadowCaster": return (PassType)8; // SVC 中确认是 8，不是 PassType.ShadowCaster(7)
+            case "ShadowCaster": return (PassType)8;
             case "Meta": return (PassType)9;
             // 标准 Unity pass
             case "ForwardBase": return PassType.ForwardBase;
