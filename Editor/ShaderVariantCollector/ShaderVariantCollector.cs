@@ -451,7 +451,7 @@ public static class ShaderVariantCollector
                 if (customPassesAnalyze.Count > 0)
                 {
                     // 收集默认 pass 已有变种中的材质关键字
-                    var materialKeywords = new HashSet<string>();
+                    var collectedMaterialKeywords = new HashSet<string>();
                     foreach (var elem in shaderInfo.ShaderVariantElements)
                     {
                         if ((int)elem.PassType == 0 || (int)elem.PassType == 13)
@@ -459,7 +459,7 @@ public static class ShaderVariantCollector
                             foreach (string kw in elem.Keywords)
                             {
                                 if (!string.IsNullOrEmpty(kw))
-                                    materialKeywords.Add(kw.Trim());
+                                    collectedMaterialKeywords.Add(kw.Trim());
                             }
                         }
                     }
@@ -497,7 +497,7 @@ public static class ShaderVariantCollector
 
                         // 基准 = 材质关键字 ∩ 该 pass 声明关键字
                         var passBase = new HashSet<string>();
-                        foreach (string kw in materialKeywords)
+                        foreach (string kw in collectedMaterialKeywords)
                         {
                             if (passDeclared.Contains(kw))
                                 passBase.Add(kw);
@@ -1783,7 +1783,7 @@ public static class ShaderVariantCollector
             if (customPasses.Count > 0)
             {
                 // 收集默认 pass（passType 0 和 13）已有变种中的所有材质关键字
-                var materialKeywords = new HashSet<string>();
+                var collectedMaterialKeywords = new HashSet<string>();
                 foreach (var variant in shaderInfo.ShaderVariantElements)
                 {
                     if ((int)variant.PassType == 0 || (int)variant.PassType == 13)
@@ -1791,7 +1791,7 @@ public static class ShaderVariantCollector
                         foreach (string kw in variant.Keywords)
                         {
                             if (!string.IsNullOrEmpty(kw))
-                                materialKeywords.Add(kw.Trim());
+                                collectedMaterialKeywords.Add(kw.Trim());
                         }
                     }
                 }
@@ -1823,7 +1823,7 @@ public static class ShaderVariantCollector
 
                     // 基准 = 材质关键字 ∩ 该 pass 声明关键字
                     var passBase = new HashSet<string>();
-                    foreach (string kw in materialKeywords)
+                    foreach (string kw in collectedMaterialKeywords)
                     {
                         if (passDeclared.Contains(kw))
                             passBase.Add(kw);
