@@ -77,6 +77,9 @@ public static class ShaderVariantCollector
     private static ShaderVariantCollectionManifest _writeWrapper;
     private static int _writeTotalVariants;
 
+    // 渲染模式排列组合日志
+    private static System.Text.StringBuilder _permutationDebugLog;
+
     // 异步拆分状态（渲染模式）
     private static List<(string path, Shader shader, List<ShaderVariantCollection.ShaderVariant> variants)> _splitQueue;
     private static int _splitIndex = 0;
@@ -170,6 +173,9 @@ public static class ShaderVariantCollector
         _lastShaderCount = 0;
         _lastVariantCount = 0;
         _stableSince = 0f;
+        _analyzeProgress = 0f;
+        _analyzeStatus = "";
+        _cancelRequested = false;
 
         // 聚焦到游戏窗口
         EditorTools.FocusUnityGameWindow();
@@ -724,6 +730,14 @@ public static class ShaderVariantCollector
         if (_steps == ESteps.None)
             return;
 
+        // 取消请求（与分析模式对齐）：立即清理并退出状态机
+        if (_cancelRequested)
+        {
+            Debug.Log("用户取消收集");
+            ResetCollectionState();
+            return;
+        }
+
         // 添加GUI显示
         // if (Event.current.type == EventType.Repaint)
         // {
@@ -847,6 +861,10 @@ public static class ShaderVariantCollector
                 DestoryLoadScene();
                 _analyzeProgress = 0.9f;
                 _analyzeStatus = "保存中";
+                // 重启计时器：WaitingDone 要求 ElapsedMilliseconds > WaitMilliseconds(1000ms)，
+                // 此前 _elapsedTime 在 CollectWaitToScene/CollectSceneSleeping 中已被 .Stop()，
+                // 若不重启将读取冻结值，导致等待条件永不满足而死锁在 90%。
+                _elapsedTime = Stopwatch.StartNew();
                 _steps = ESteps.WaitingDone;
             }
             else
@@ -879,8 +897,20 @@ public static class ShaderVariantCollector
             _analyzeProgress = 0.9f;
             _analyzeStatus = "保存变种集";
 
-            // 执行保存（不含拆分），并构建拆分队列
-            SaveShaderVariantCollection(buildSplitQueue: true);
+            // 执行保存（不含拆分），并构建拆分队列。
+            // 反射调用 Unity 内部 ShaderUtil API 可能偶发抛异常；由于本方法挂在 EditorApplication.update 上，
+            // 异常会被 Unity 吞掉但 _steps 不变，下一帧又会重新进入并再次抛异常 —— 表现为进度永久卡在 90%。
+            // 包 try/catch 后失败即走 FinishCollection() 退出状态机，避免死循环。
+            try
+            {
+                SaveShaderVariantCollection(buildSplitQueue: true);
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[ShaderVariantCollector] 保存变种集失败: {ex}");
+                FinishCollection();
+                return;
+            }
 
             if (_splitByShaderName && _splitQueue != null && _splitQueue.Count > 0)
             {
@@ -1316,12 +1346,43 @@ public static class ShaderVariantCollector
             foreach (var info in wrapper.ShaderVariantInfos) beforePermutation += info.ShaderVariantElements.Count;
             Debug.Log($"[变种统计] 排列组合前: {wrapper.ShaderVariantInfos.Count} shader, {beforePermutation} 变种");
 
+            // 初始化排列组合 debug 日志
+            bool permDebug = ShaderVariantCollectorSetting.GetSaveDebugRawSVC(_currentPackageName);
+            if (permDebug)
+            {
+                _permutationDebugLog = new System.Text.StringBuilder();
+                _permutationDebugLog.AppendLine($"[渲染模式排列组合日志] {System.DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                _permutationDebugLog.AppendLine($"savePath: {_savePath}");
+                _permutationDebugLog.AppendLine();
+            }
+            else
+            {
+                _permutationDebugLog = null;
+            }
+
             // 自动处理 multi_compile 组，重新排列组合变种
             AddGlobalKeywordVariantsToManifest(wrapper, _globalKeywords ?? new List<string>());
 
             int afterPermutation = 0;
             foreach (var info in wrapper.ShaderVariantInfos) afterPermutation += info.ShaderVariantElements.Count;
             Debug.Log($"[变种统计] 排列组合后: {wrapper.ShaderVariantInfos.Count} shader, {afterPermutation} 变种");
+
+            // 保存排列组合 debug 日志
+            if (permDebug && _permutationDebugLog != null)
+            {
+                string permBasePath = Path.GetDirectoryName(_savePath);
+                string permParentDir = Path.GetDirectoryName(permBasePath);
+                string permDebugDir = Path.Combine(permParentDir, "debug");
+                EditorTools.CreateDirectory(permDebugDir);
+                string permDebugPath = Path.Combine(permDebugDir, "permutation_debug.txt");
+                _permutationDebugLog.AppendLine();
+                _permutationDebugLog.AppendLine($"==== 汇总 ====");
+                _permutationDebugLog.AppendLine($"排列组合前: {wrapper.ShaderVariantInfos.Count} shader, {beforePermutation} 变种");
+                _permutationDebugLog.AppendLine($"排列组合后: {wrapper.ShaderVariantInfos.Count} shader, {afterPermutation} 变种");
+                File.WriteAllText(permDebugPath, _permutationDebugLog.ToString());
+                Debug.Log($"[Debug] 排列组合日志已保存: {permDebugPath}");
+                _permutationDebugLog = null;
+            }
 
             // 获取Always Included Shaders列表
             var alwaysIncludedShaderNames = GetAlwaysIncludedShaderNames();
@@ -1475,17 +1536,37 @@ public static class ShaderVariantCollector
     }
 
     /// <summary>
+    /// 统一清理收集状态：注销 update 回调、清理临时资源、重置所有 static 运行时字段。
+    /// 可从正常完成、取消、异常、超时等任意路径调用，确保状态机不卡死。
+    /// </summary>
+    private static void ResetCollectionState()
+    {
+        EditorApplication.update -= EditorUpdate;
+
+        // 清理临时场景资源（球体、加载的场景）
+        DestroyAllSpheres();
+        DestoryLoadScene();
+
+        _steps = ESteps.None;
+        _analyzeProgress = 0f;
+        _analyzeStatus = "";
+        _cancelRequested = false;
+        _splitQueue = null;
+        _splitShaderNames = null;
+        _splitIndex = 0;
+    }
+
+    /// <summary>
     /// 收集完成（无拆分或拆分队列为空时调用）
     /// </summary>
     private static void FinishCollection()
     {
         AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
         Debug.Log($"搜集SVC完毕！");
-        EditorApplication.update -= EditorUpdate;
-        _steps = ESteps.None;
-        _analyzeProgress = 0f;
-        _analyzeStatus = "";
-        _completedCallback?.Invoke();
+        // 先缓存回调，再重置状态，避免回调里读到尚未清零的旧状态
+        var callback = _completedCallback;
+        ResetCollectionState();
+        callback?.Invoke();
     }
 
     /// <summary>
@@ -1667,6 +1748,26 @@ public static class ShaderVariantCollector
                 Debug.Log($"  已有变种[{vi}]: passType={(int)v.passType} keywords=[{string.Join(", ", v.keywords)}]");
             }
 
+            // 排列组合 debug 日志
+            if (_permutationDebugLog != null)
+            {
+                _permutationDebugLog.AppendLine($"==== {shaderInfo.ShaderName} ====");
+                _permutationDebugLog.AppendLine($"shaderPath: {shaderPath}");
+                _permutationDebugLog.AppendLine($"原始变体数: {existingVariants.Count}");
+                _permutationDebugLog.AppendLine("--- pass 组 ---");
+                foreach (var kvp in passTypeToGroups)
+                {
+                    var groupStrs = new List<string>();
+                    foreach (var g in kvp.Value)
+                        groupStrs.Add("{" + string.Join(",", g) + "}");
+                    _permutationDebugLog.AppendLine($"  passType={kvp.Key}: {string.Join(" | ", groupStrs)}");
+                }
+                _permutationDebugLog.AppendLine("--- 原始变体（渲染收集）---");
+                foreach (var v in existingVariants)
+                    _permutationDebugLog.AppendLine($"  passType={(int)v.passType} keywords=[{string.Join(" ", v.keywords)}]");
+                _permutationDebugLog.AppendLine("--- 重组过程 ---");
+            }
+
             // 清空变种列表，重新构建
             shaderInfo.ShaderVariantElements.Clear();
             shaderInfo.ShaderVariantCount = 0;
@@ -1703,6 +1804,13 @@ public static class ShaderVariantCollector
                     }
                 }
 
+                // 排列组合 debug 日志：记录原始变体 → 剔除组关键字后的基础
+                if (_permutationDebugLog != null)
+                {
+                    _permutationDebugLog.AppendLine($"  原始: passType={(int)passType} [{string.Join(" ", baseKeywords)}]");
+                    _permutationDebugLog.AppendLine($"    → 基础: [{string.Join(" ", cleanKeywords)}] (有组关键字={hasGroupKeyword})");
+                }
+
                 // 如果当前变种没有组关键字（如 ShadowCaster），直接保留原始
                 if (!hasGroupKeyword)
                 {
@@ -1725,6 +1833,8 @@ public static class ShaderVariantCollector
                             });
                             shaderInfo.ShaderVariantCount++;
                             addedCount++;
+                            if (_permutationDebugLog != null)
+                                _permutationDebugLog.AppendLine($"      保留: passType={(int)passType} [{string.Join(" ", cleanKeywords)}]");
                         }
                     }
                     continue;
@@ -1764,10 +1874,15 @@ public static class ShaderVariantCollector
                     });
                     shaderInfo.ShaderVariantCount++;
                     addedCount++;
+
+                    if (_permutationDebugLog != null)
+                        _permutationDebugLog.AppendLine($"      生成: passType={(int)passType} [{string.Join(" ", finalKeywords)}]");
                 }
             }
 
             Debug.Log($"[变种重组] {shaderInfo.ShaderName}: 重组后变种数={shaderInfo.ShaderVariantCount}");
+            if (_permutationDebugLog != null)
+                _permutationDebugLog.AppendLine($"  → 重组后变体数: {shaderInfo.ShaderVariantCount}");
 
             // ---- 自定义 pass 关键字注入 ----
             // 自定义 pass（LightMode 不在标准映射中）无法单独收集变种，
@@ -1875,6 +1990,10 @@ public static class ShaderVariantCollector
                     }
 
                     Debug.Log($"[自定义pass注入] {shaderInfo.ShaderName} LightMode=\"{customPass.Name}\": 基准=[{string.Join(",", passBase)}] 注入 {customAdded} 个变种");
+                    if (_permutationDebugLog != null)
+                    {
+                        _permutationDebugLog.AppendLine($"  [自定义pass] LightMode=\"{customPass.Name}\" 基准=[{string.Join(",", passBase)}] 注入 {customAdded} 个");
+                    }
                 }
             }
         }
@@ -2015,8 +2134,8 @@ public static class ShaderVariantCollector
                     passBraceStart = -1;
                     passTags = "";
                     if (trimmed == "Pass {")
-                        passBraceStart = braceDepth;
-                    Debug.Log($"[GetMultiCompileGroupsByPass] 行{i+1}: 发现Pass, trimmed=\"{trimmed}\", braceDepth={braceDepth}");
+                        passBraceStart = braceDepth + 1; // 同行 "Pass {" 的 { 尚未计入 braceDepth，此处 +1 修正为 Pass 块内部层级
+                    Debug.Log($"[GetMultiCompileGroupsByPass] 行{i+1}: 发现Pass, trimmed=\"{trimmed}\", braceDepth={braceDepth}, passBraceStart={passBraceStart}");
                 }
 
                 // 追踪花括号深度

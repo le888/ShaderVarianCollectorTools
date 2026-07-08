@@ -13,6 +13,17 @@ public class ShaderVariantCollectorWindow : EditorWindow
         window.minSize = new Vector2(800, 600);
     }
 
+    private void OnDestroy()
+    {
+        // 关闭窗口时取消正在进行的渲染收集。
+        // 渲染模式的 EditorUpdate 会在下一帧检测到 _cancelRequested 并调用 ResetCollectionState()，
+        // 注销 update 回调并清零进度，避免重开窗口时仍显示上次的进度（如 90%）且无法重新开始。
+        if (ShaderVariantCollector.IsCollecting)
+        {
+            ShaderVariantCollector.Cancel();
+        }
+    }
+
     private static string _currentPackageName = "Default";
 
     private Vector2 _scrollPos;
