@@ -1793,54 +1793,15 @@ public static class ShaderVariantCollector
                 }
                 cleanKeywords.Sort();
 
-                // 检查原始变种是否包含当前 pass 的组关键字
-                bool hasGroupKeyword = false;
-                foreach (string kw in baseKeywords)
-                {
-                    if (currentPassGroupKeywords.Contains(kw.Trim()))
-                    {
-                        hasGroupKeyword = true;
-                        break;
-                    }
-                }
-
                 // 排列组合 debug 日志：记录原始变体 → 剔除组关键字后的基础
                 if (_permutationDebugLog != null)
                 {
                     _permutationDebugLog.AppendLine($"  原始: passType={(int)passType} [{string.Join(" ", baseKeywords)}]");
-                    _permutationDebugLog.AppendLine($"    → 基础: [{string.Join(" ", cleanKeywords)}] (有组关键字={hasGroupKeyword})");
+                    _permutationDebugLog.AppendLine($"    → 基础: [{string.Join(" ", cleanKeywords)}]");
                 }
 
-                // 如果当前变种没有组关键字（如 ShadowCaster），直接保留原始
-                if (!hasGroupKeyword)
-                {
-                    // 排除包含被排除关键字的变种
-                    bool hasExcluded = false;
-                    foreach (string kw in cleanKeywords)
-                    {
-                        if (excludeSet.Contains(kw)) { hasExcluded = true; break; }
-                    }
-                    if (!hasExcluded)
-                    {
-                        string key = $"{(int)passType}|{string.Join(" ", cleanKeywords)}";
-                        if (!seenVariants.Contains(key))
-                        {
-                            seenVariants.Add(key);
-                            shaderInfo.ShaderVariantElements.Add(new ShaderVariantCollectionManifest.ShaderVariantElement
-                            {
-                                PassType = passType,
-                                Keywords = cleanKeywords.ToArray()
-                            });
-                            shaderInfo.ShaderVariantCount++;
-                            addedCount++;
-                            if (_permutationDebugLog != null)
-                                _permutationDebugLog.AppendLine($"      保留: passType={(int)passType} [{string.Join(" ", cleanKeywords)}]");
-                        }
-                    }
-                    continue;
-                }
-
-                // 第二步：用当前 pass 的组关键字重新排列组合（笛卡尔积）
+                // 用当前 pass 的组关键字重新排列组合（笛卡尔积）
+                // 不管原始变体有没有组关键字，都要展开（材质基准 × 组关键字）
                 var combinations = GenerateGroupCombinations(currentPassGroups);
 
                 foreach (var combo in combinations)
