@@ -39,6 +39,8 @@ public class ShaderVariantStripper : IPreprocessShaders
 
         // 当前回调的 shader 阶段（Unity 按阶段分别回调：vertex/fragment/...）
         string stageTag = StageShortName(snippet.shaderType);
+        // 原始诊断：无条件记录每个 (shaderType, passType, count)，确认 fragment 阶段是否回调到
+        Debug.Log($"[ShaderStrip诊断] shader={shader.name} shaderType={(int)snippet.shaderType}({snippet.shaderType}) passType={(int)snippet.passType} passName={snippet.passName} 变体数={data.Count}");
 
         // 完全裁剪：shader 在裁剪列表中，移除所有变种
         if (stripShaderNames.Contains(shader.name))
