@@ -37,6 +37,9 @@ public class ShaderVariantStripper : IPreprocessShaders
             initialized = true;
         }
 
+        // 当前回调的 shader 阶段（Unity 按阶段分别回调：vertex/fragment/...）
+        string stageTag = StageShortName(snippet.shaderType);
+
         // 完全裁剪：shader 在裁剪列表中，移除所有变种
         if (stripShaderNames.Contains(shader.name))
         {
@@ -44,7 +47,7 @@ public class ShaderVariantStripper : IPreprocessShaders
             _totalOriginal += removed;
             _totalStripped += removed;
             data.Clear();
-            Debug.Log($"[完全裁剪] Shader: {shader.name}, 移除全部 {removed} 个变种");
+            Debug.Log($"[完全裁剪] Shader: {shader.name}, Stage: {stageTag}, 移除全部 {removed} 个变种");
             return;
         }
 
@@ -58,7 +61,9 @@ public class ShaderVariantStripper : IPreprocessShaders
 
         for (int i = data.Count - 1; i >= 0; i--)
         {
+            // key 保持阶段无关（用于 SVC 匹配）；displayKey 带阶段仅用于日志展示
             string key = GenerateVariantKey(shader.name, snippet.passType, data[i].shaderKeywordSet.GetShaderKeywords());
+            string displayKey = $"{stageTag}|{key}";
 
             // 检查变种是否包含排除关键字（对所有 shader 生效）
             bool hasExcludedKeyword = false;
@@ -73,31 +78,48 @@ public class ShaderVariantStripper : IPreprocessShaders
 
             if (hasExcludedKeyword)
             {
-                _buildLog[shader.name].Add($"[裁剪][排除关键字] {key}");
+                _buildLog[shader.name].Add($"[裁剪][排除关键字] {displayKey}");
                 data.RemoveAt(i);
                 _totalStripped++;
             }
             else if (inSVCRange && !validVariants.Contains(key))
             {
-                _buildLog[shader.name].Add($"[裁剪][未收录SVC] {key}");
+                _buildLog[shader.name].Add($"[裁剪][未收录SVC] {displayKey}");
                 data.RemoveAt(i);
                 _totalStripped++;
             }
             else if (!inSVCRange)
             {
-                _buildLog[shader.name].Add($"[保留][未在收集范围] {key}");
+                _buildLog[shader.name].Add($"[保留][未在收集范围] {displayKey}");
                 _totalKept++;
             }
             else
             {
-                _buildLog[shader.name].Add($"[保留][SVC收录] {key}");
+                _buildLog[shader.name].Add($"[保留][SVC收录] {displayKey}");
                 _totalKept++;
             }
         }
 
         if (originalCount != data.Count)
         {
-            Debug.Log($"[裁剪] Shader: {shader.name}, Pass: {snippet.passName}, 保留 {data.Count} / {originalCount}");
+            Debug.Log($"[裁剪] Shader: {shader.name}, Pass: {snippet.passName}, Stage: {stageTag}, 保留 {data.Count} / {originalCount}");
+        }
+    }
+
+    /// <summary>
+    /// 把 ShaderType 阶段枚举转成短名（vs/fs/...），未知值回退到枚举名
+    /// </summary>
+    private static string StageShortName(ShaderType st)
+    {
+        string s = st.ToString();
+        switch (s)
+        {
+            case "Vertex": return "vs";
+            case "Fragment": return "fs";
+            case "Geometry": return "gs";
+            case "Hull": return "hs";
+            case "Domain": return "ds";
+            default: return s;
         }
     }
 
@@ -135,6 +157,30 @@ public class ShaderVariantStripper : IPreprocessShaders
         {
             var variants = _buildLog[shaderName];
             sb.AppendLine($"--- {shaderName} ({variants.Count} 条) ---");
+
+            // 按阶段(vs/fs/...)统计保留/裁剪数
+            var stageStats = new Dictionary<string, (int kept, int stripped)>();
+            foreach (var v in variants)
+            {
+                // 日志格式: "[原因] stage|shader|passType|keywords"，stage 在第一个 '|' 前、最后一个空格后
+                int bar = v.IndexOf('|');
+                string stage = "?";
+                if (bar > 0)
+                {
+                    int space = v.LastIndexOf(' ', bar);
+                    stage = v.Substring(space + 1, bar - space - 1);
+                }
+                bool kept = v.Contains("[保留]");
+                if (!stageStats.ContainsKey(stage))
+                    stageStats[stage] = (0, 0);
+                var cur = stageStats[stage];
+                stageStats[stage] = kept ? (cur.kept + 1, cur.stripped) : (cur.kept, cur.stripped + 1);
+            }
+            var stageSummary = new List<string>();
+            foreach (var kv in stageStats)
+                stageSummary.Add($"{kv.Key}: 保留{kv.Value.kept}/裁剪{kv.Value.stripped}");
+            sb.AppendLine($"  [阶段统计] {string.Join(", ", stageSummary)}");
+
             foreach (var v in variants)
             {
                 sb.AppendLine($"  {v}");
