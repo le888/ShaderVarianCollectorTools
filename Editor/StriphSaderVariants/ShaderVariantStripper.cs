@@ -11,10 +11,8 @@ using UnityEditor.Build.Reporting;
 
 public class ShaderVariantStripper : IPreprocessShaders
 {
-    private static HashSet<string> validVariants = new HashSet<string>();
     private static HashSet<string> stripShaderNames = new HashSet<string>();
     private static HashSet<string> excludeKeywords = new HashSet<string>();
-    private static HashSet<string> needHandleNames = new HashSet<string>();
     private static bool initialized = false;
 
     // 构建日志：记录每个 shader 保留的变种
@@ -59,15 +57,11 @@ public class ShaderVariantStripper : IPreprocessShaders
         if (!_buildLog.ContainsKey(shader.name))
             _buildLog[shader.name] = new List<string>();
 
-        bool inSVCRange = needHandleNames.Contains(shader.name);
-
         for (int i = data.Count - 1; i >= 0; i--)
         {
-            // key 保持阶段无关（用于 SVC 匹配）；displayKey 带阶段仅用于日志展示
-            string key = GenerateVariantKey(shader.name, snippet.passType, data[i].shaderKeywordSet.GetShaderKeywords());
-            string displayKey = $"{stageTag}|{key}";
+            string displayKey = $"{stageTag}|{GenerateVariantKey(shader.name, snippet.passType, data[i].shaderKeywordSet.GetShaderKeywords())}";
 
-            // 检查变种是否包含排除关键字（对所有 shader 生效）
+            // 仅按排除关键字裁剪；不再做 SVC 白名单过滤（原逻辑在 URP 下只对 vertex 生效，易误删）
             bool hasExcludedKeyword = false;
             foreach (var kw in data[i].shaderKeywordSet.GetShaderKeywords())
             {
@@ -84,20 +78,9 @@ public class ShaderVariantStripper : IPreprocessShaders
                 data.RemoveAt(i);
                 _totalStripped++;
             }
-            else if (inSVCRange && !validVariants.Contains(key))
-            {
-                _buildLog[shader.name].Add($"[裁剪][未收录SVC] {displayKey}");
-                data.RemoveAt(i);
-                _totalStripped++;
-            }
-            else if (!inSVCRange)
-            {
-                _buildLog[shader.name].Add($"[保留][未在收集范围] {displayKey}");
-                _totalKept++;
-            }
             else
             {
-                _buildLog[shader.name].Add($"[保留][SVC收录] {displayKey}");
+                _buildLog[shader.name].Add($"[保留] {displayKey}");
                 _totalKept++;
             }
         }
@@ -200,13 +183,8 @@ public class ShaderVariantStripper : IPreprocessShaders
     [MenuItem("Tools/ShaderVariantStripper LoadAllShaderVariants")]
     private static void LoadAllShaderVariants()
     {
-        validVariants.Clear();
         stripShaderNames.Clear();
         excludeKeywords.Clear();
-        needHandleNames.Clear();
-
-        // 从配置读取 SVC 路径
-        string svcFolder = ShaderVariantCollectorSetting.GetStripSVCPath("Default");
 
         // 构建完全裁剪的 shader 列表：收集器过滤 + 额外配置
         var filterNames = ShaderVariantCollectorSetting.GetFilterShaderNames("Default");
@@ -236,71 +214,8 @@ public class ShaderVariantStripper : IPreprocessShaders
                 excludeKeywords.Add(kw);
         }
 
-        Debug.Log($"[裁剪配置] SVC路径: {svcFolder}");
         Debug.Log($"[裁剪配置] 完全裁剪 shader: {stripShaderNames.Count} 个");
         Debug.Log($"[裁剪配置] 排除关键字: {excludeKeywords.Count} 个");
-
-        // 加载 SVC 文件
-        string[] guids = AssetDatabase.FindAssets("t:ShaderVariantCollection", new[] { svcFolder });
-
-        foreach (string guid in guids)
-        {
-            string path = AssetDatabase.GUIDToAssetPath(guid);
-            ShaderVariantCollection svc = AssetDatabase.LoadAssetAtPath<ShaderVariantCollection>(path);
-            if (svc == null) continue;
-
-            SerializedObject so = new SerializedObject(svc);
-            SerializedProperty shadersProp = so.FindProperty("m_Shaders");
-            if (shadersProp == null || !shadersProp.isArray)
-            {
-                Debug.LogWarning($"无法读取 ShaderVariantCollection 中的 m_Shaders：{path}");
-                continue;
-            }
-
-            for (int i = 0; i < shadersProp.arraySize; i++)
-            {
-                var shaderEntry = shadersProp.GetArrayElementAtIndex(i);
-                var shaderProp = shaderEntry.FindPropertyRelative("first");
-                var variantsProp = shaderEntry.FindPropertyRelative("second.variants");
-
-                Shader shader = shaderProp.objectReferenceValue as Shader;
-                if (shader == null || variantsProp == null || !variantsProp.isArray) continue;
-
-                // 跳过完全裁剪的 shader
-                if (stripShaderNames.Contains(shader.name)) continue;
-
-                needHandleNames.Add(shader.name);
-
-                for (int j = 0; j < variantsProp.arraySize; j++)
-                {
-                    var variantProp = variantsProp.GetArrayElementAtIndex(j);
-                    var keywordsProp = variantProp.FindPropertyRelative("keywords");
-                    int passType = variantProp.FindPropertyRelative("passType")?.intValue ?? 0;
-
-                    List<string> keywords = new List<string>();
-                    if (keywordsProp != null && keywordsProp.propertyType == SerializedPropertyType.String)
-                    {
-                        string keywordLine = keywordsProp.stringValue;
-                        if (!string.IsNullOrEmpty(keywordLine))
-                        {
-                            keywords.AddRange(keywordLine.Split(' ', System.StringSplitOptions.RemoveEmptyEntries));
-                        }
-                    }
-
-                    string key = GenerateVariantKey(shader.name, (PassType)passType, keywords.ToArray());
-                    validVariants.Add(key);
-                }
-            }
-        }
-
-        Debug.Log($"[裁剪配置] 有效变体总数: {validVariants.Count}");
-    }
-
-    private static string GenerateVariantKey(string shaderName, PassType passType, string[] keywords)
-    {
-        List<string> keywordList = new List<string>(keywords);
-        keywordList.Sort();
-        return $"{shaderName}|{(int)passType}|{string.Join("+", keywordList)}";
     }
 
     private static string GenerateVariantKey(string shaderName, PassType passType, IEnumerable<ShaderKeyword> keywords)
