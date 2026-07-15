@@ -685,18 +685,16 @@ public static class ShaderVariantCollector
             // 保存 shader 名称列表
             if (_writeShaderNames.Count > 0)
             {
-                string basePath = Path.GetDirectoryName(_writeSavePath);
                 string baseName = Path.GetFileNameWithoutExtension(_writeSavePath);
-                string shaderNamesPath = Path.Combine(basePath, $"{baseName}_shaderNames.txt");
+                string shaderNamesPath = Path.Combine(GetBuildLogDir(), $"{baseName}_shaderNames.txt");
                 File.WriteAllLines(shaderNamesPath, _writeShaderNames);
             }
 
             // 保存 debug 日志
             if (_writeDebugRaw)
             {
-                string debugDir = Path.GetDirectoryName(Path.GetDirectoryName(_writeSavePath));
-                string debugPath = Path.Combine(debugDir, "debug", "debug.txt");
-                EditorTools.CreateFileDirectory(debugPath);
+                string baseName = Path.GetFileNameWithoutExtension(_writeSavePath);
+                string debugPath = Path.Combine(GetBuildLogDir(), $"{baseName}_debug.txt");
                 _writeDebugLog.AppendLine();
                 _writeDebugLog.AppendLine($"完成: {_writeWrapper.ShaderVariantInfos.Count} 个 shader, {_writeTotalVariants} 个变种");
                 File.WriteAllText(debugPath, _writeDebugLog.ToString());
@@ -1332,13 +1330,11 @@ public static class ShaderVariantCollector
             bool debugRaw = ShaderVariantCollectorSetting.GetSaveDebugRawSVC(_currentPackageName);
             if (debugRaw)
             {
-                string basePath = Path.GetDirectoryName(_savePath);
-                string parentDir = Path.GetDirectoryName(basePath);
-                string debugDir = Path.Combine(parentDir, "debug");
-                EditorTools.CreateDirectory(debugDir);
-                string debugPath = Path.Combine(debugDir, Path.GetFileName(_savePath).Replace(".shadervariants", "_RAW.shadervariants"));
-                AssetDatabase.CopyAsset(_savePath, debugPath);
-                AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
+                string baseName = Path.GetFileNameWithoutExtension(_savePath);
+                string debugPath = Path.Combine(GetBuildLogDir(), $"{baseName}_RAW.shadervariants");
+                string srcAbs = Path.GetFullPath(_savePath);
+                if (File.Exists(debugPath)) File.Delete(debugPath);
+                File.Copy(srcAbs, debugPath);
                 Debug.Log($"[Debug] 原始渲染变体已保存: {debugPath}");
             }
 
@@ -1370,11 +1366,8 @@ public static class ShaderVariantCollector
             // 保存排列组合 debug 日志
             if (permDebug && _permutationDebugLog != null)
             {
-                string permBasePath = Path.GetDirectoryName(_savePath);
-                string permParentDir = Path.GetDirectoryName(permBasePath);
-                string permDebugDir = Path.Combine(permParentDir, "debug");
-                EditorTools.CreateDirectory(permDebugDir);
-                string permDebugPath = Path.Combine(permDebugDir, "permutation_debug.txt");
+                string baseName = Path.GetFileNameWithoutExtension(_savePath);
+                string permDebugPath = Path.Combine(GetBuildLogDir(), $"{baseName}_permutation_debug.txt");
                 _permutationDebugLog.AppendLine();
                 _permutationDebugLog.AppendLine($"==== 汇总 ====");
                 _permutationDebugLog.AppendLine($"排列组合前: {wrapper.ShaderVariantInfos.Count} shader, {beforePermutation} 变种");
@@ -1408,8 +1401,9 @@ public static class ShaderVariantCollector
             bool saveJsonFile = ShaderVariantCollectorSetting.GetSaveJsonFile(_currentPackageName);
             if (saveJsonFile)
             {
-                string savePath = _savePath.Replace(".shadervariants", ".json");
-                File.WriteAllText(savePath, jsonData);
+                string baseName = Path.GetFileNameWithoutExtension(_savePath);
+                string jsonPath = Path.Combine(GetBuildLogDir(), $"{baseName}.json");
+                File.WriteAllText(jsonPath, jsonData);
             }
 
             if (_splitByShaderName)
@@ -1521,7 +1515,7 @@ public static class ShaderVariantCollector
                         }
                     }
 
-                    string shaderNamesPath = Path.Combine(basePath, $"{baseName}_shaderNames.txt");
+                    string shaderNamesPath = Path.Combine(GetBuildLogDir(), $"{baseName}_shaderNames.txt");
                     File.WriteAllLines(shaderNamesPath, shaderNamesSave);
                     AssetDatabase.DeleteAsset(_savePath);
                     AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
@@ -1577,7 +1571,7 @@ public static class ShaderVariantCollector
         // 保存 shader 名称列表
         if (_splitShaderNames != null && _splitShaderNames.Count > 0)
         {
-            string shaderNamesPath = Path.Combine(_splitBasePath, $"{_splitBaseName}_shaderNames.txt");
+            string shaderNamesPath = Path.Combine(GetBuildLogDir(), $"{_splitBaseName}_shaderNames.txt");
             File.WriteAllLines(shaderNamesPath, _splitShaderNames);
         }
 
@@ -1589,6 +1583,17 @@ public static class ShaderVariantCollector
         _splitShaderNames = null;
 
         FinishCollection();
+    }
+
+    /// <summary>
+    /// 所有调试/日志文件统一写入项目根目录下的 BuildLogs/，避免污染 Assets 目录。
+    /// 与构建期 ShaderVariantStripper 的日志目录保持一致。
+    /// </summary>
+    private static string GetBuildLogDir()
+    {
+        string dir = Path.Combine(Application.dataPath, "..", "BuildLogs");
+        Directory.CreateDirectory(dir);
+        return dir;
     }
 
     /// <summary>

@@ -13,6 +13,7 @@ public class ShaderVariantStripper : IPreprocessShaders
 {
     private static HashSet<string> stripShaderNames = new HashSet<string>();
     private static HashSet<string> excludeKeywords = new HashSet<string>();
+    private static HashSet<string> stripPassNames = new HashSet<string>();
     private static bool initialized = false;
 
     // 构建日志：记录每个 shader 保留的变种
@@ -51,6 +52,23 @@ public class ShaderVariantStripper : IPreprocessShaders
             return;
         }
 
+        // 按 Pass 名称完全裁剪：snippet.passName 命中配置列表则移除该 pass 的全部变体
+        // （URP/内置管线下 passName 即 Pass 的 Name，如 DepthOnly/ShadowCaster/UniversalForward）
+        if (!string.IsNullOrEmpty(snippet.passName) && stripPassNames.Contains(snippet.passName))
+        {
+            int removed = data.Count;
+            _totalOriginal += removed;
+            _totalStripped += removed;
+
+            if (!_buildLog.ContainsKey(shader.name))
+                _buildLog[shader.name] = new List<string>();
+            _buildLog[shader.name].Add($"[裁剪][Pass={snippet.passName}] {stageTag}|{shader.name}|{(int)snippet.passType}|(全部 {removed} 个)");
+
+            data.Clear();
+            Debug.Log($"[Pass裁剪] Shader: {shader.name}, Pass: {snippet.passName}, Stage: {stageTag}, 移除全部 {removed} 个变种");
+            return;
+        }
+
         int originalCount = data.Count;
         _totalOriginal += originalCount;
 
@@ -59,7 +77,7 @@ public class ShaderVariantStripper : IPreprocessShaders
 
         for (int i = data.Count - 1; i >= 0; i--)
         {
-            string displayKey = $"{stageTag}|{GenerateVariantKey(shader.name, snippet.passType, data[i].shaderKeywordSet.GetShaderKeywords())}";
+            string displayKey = $"{stageTag}|{GenerateVariantKey(shader.name, snippet.passName, snippet.passType, data[i].shaderKeywordSet.GetShaderKeywords())}";
 
             // 仅按排除关键字裁剪；不再做 SVC 白名单过滤（原逻辑在 URP 下只对 vertex 生效，易误删）
             bool hasExcludedKeyword = false;
@@ -185,6 +203,7 @@ public class ShaderVariantStripper : IPreprocessShaders
     {
         stripShaderNames.Clear();
         excludeKeywords.Clear();
+        stripPassNames.Clear();
 
         // 构建完全裁剪的 shader 列表：收集器过滤 + 额外配置
         var filterNames = ShaderVariantCollectorSetting.GetFilterShaderNames("Default");
@@ -214,11 +233,20 @@ public class ShaderVariantStripper : IPreprocessShaders
                 excludeKeywords.Add(kw);
         }
 
+        // 构建裁剪 Pass 列表：按 snippet.passName 精确匹配
+        var passNames = ShaderVariantCollectorSetting.GetStripPassNames("Default");
+        foreach (var pn in passNames)
+        {
+            if (!string.IsNullOrEmpty(pn))
+                stripPassNames.Add(pn);
+        }
+
         Debug.Log($"[裁剪配置] 完全裁剪 shader: {stripShaderNames.Count} 个");
         Debug.Log($"[裁剪配置] 排除关键字: {excludeKeywords.Count} 个");
+        Debug.Log($"[裁剪配置] 裁剪 Pass: {stripPassNames.Count} 个");
     }
 
-    private static string GenerateVariantKey(string shaderName, PassType passType, IEnumerable<ShaderKeyword> keywords)
+    private static string GenerateVariantKey(string shaderName, string passName, PassType passType, IEnumerable<ShaderKeyword> keywords)
     {
         List<string> keywordList = new List<string>();
         foreach (var kw in keywords)
@@ -226,7 +254,10 @@ public class ShaderVariantStripper : IPreprocessShaders
             keywordList.Add(kw.name);
         }
         keywordList.Sort();
-        return $"{shaderName}|{(int)passType}|{string.Join("+", keywordList)}";
+        // 输出格式: shaderName|passName|passType(int)|keywords
+        // 注意:URP 下多个 Pass(UniversalForward/DepthOnly/ShadowCaster...)的 passType 都是 13(ScriptableRenderPipeline),
+        // 仅靠 passType 数字无法区分,因此显式带上 passName 字符串。
+        return $"{shaderName}|{passName}|{(int)passType}|{string.Join("+", keywordList)}";
     }
 }
 

@@ -329,6 +329,7 @@ public class ShaderVariantCollectorSetting : ScriptableObject
     public string stripSVCPath = "Assets/ResourcesAB/Config/ShaderVarians";
     public List<string> stripAdditionalShaderNames = new List<string>();
     public List<string> stripAdditionalKeywords = new List<string>();
+    public List<string> stripPassNames = new List<string>();
 
     // 裁剪 SVC 路径
     public static string GetStripSVCPath(string packageName)
@@ -366,6 +367,19 @@ public class ShaderVariantCollectorSetting : ScriptableObject
     {
         ShaderVariantCollectorSetting settings = GetSettings();
         settings.stripAdditionalKeywords = new List<string>(keywords);
+        SaveSettings(settings);
+    }
+
+    // 额外裁剪 Pass（按 snippet.passName 精确匹配，如 DepthOnly/ShadowCaster）
+    public static List<string> GetStripPassNames(string packageName)
+    {
+        return GetSettings().stripPassNames;
+    }
+
+    public static void SetStripPassNames(string packageName, List<string> passNames)
+    {
+        ShaderVariantCollectorSetting settings = GetSettings();
+        settings.stripPassNames = new List<string>(passNames);
         SaveSettings(settings);
     }
 }

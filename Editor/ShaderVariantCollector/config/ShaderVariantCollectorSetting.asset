@@ -26,10 +26,13 @@ MonoBehaviour:
   localKeywordsCollection:
     LocalKeywords: []
   filterShaderNames: []
-  maxVariantsPerFile: 1
+  maxVariantsPerFile: 0
   saveDebugRawSVC: 1
   analyzeMode: 0
   selectedPassTypes: 080000000d000000
+  customLightModes: []
   stripSVCPath: Assets/ResourcesAB/Config/ShaderVarians
   stripAdditionalShaderNames: []
   stripAdditionalKeywords: []
+  stripPassNames:
+  - DepthOnly

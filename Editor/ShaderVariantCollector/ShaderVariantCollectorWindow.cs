@@ -40,6 +40,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
     private bool _showStripRefKeywords = true;
     private bool _showStripAdditionalShaders = true;
     private bool _showStripAdditionalKeywords = true;
+    private bool _showStripPassNames = true;
 
     // 后处理扫描 tab
     private PostProcessScanner.ScanResult _ppScanResult;
@@ -53,6 +54,7 @@ public class ShaderVariantCollectorWindow : EditorWindow
     private string _newGlobalKeyword = "";
     private string _newStripAdditionalShader = "";
     private string _newStripAdditionalKeyword = "";
+    private string _newStripPassName = "";
 
     // 延迟写入：在绘制阶段收集变更，绘制结束后统一应用
     private string _pendingFileName;
@@ -79,8 +81,10 @@ public class ShaderVariantCollectorWindow : EditorWindow
     private string _pendingStripSVCPath;
     private int _pendingRemoveStripAdditionalShaderIndex = -1;
     private int _pendingRemoveStripAdditionalKeywordIndex = -1;
+    private int _pendingRemoveStripPassIndex = -1;
     private bool _pendingAddStripAdditionalShader;
     private bool _pendingAddStripAdditionalKeyword;
+    private bool _pendingAddStripPass;
 
     private void OnGUI()
     {
@@ -108,8 +112,10 @@ public class ShaderVariantCollectorWindow : EditorWindow
         _pendingStripSVCPath = null;
         _pendingRemoveStripAdditionalShaderIndex = -1;
         _pendingRemoveStripAdditionalKeywordIndex = -1;
+        _pendingRemoveStripPassIndex = -1;
         _pendingAddStripAdditionalShader = false;
         _pendingAddStripAdditionalKeyword = false;
+        _pendingAddStripPass = false;
 
         // Tab 栏
         _currentTab = GUILayout.Toolbar(_currentTab, new[] { "收集模式", "裁剪配置", "后处理扫描" }, GUILayout.Height(28));
@@ -399,6 +405,15 @@ public class ShaderVariantCollectorWindow : EditorWindow
                 ShaderVariantCollectorSetting.SetStripAdditionalKeywords(_currentPackageName, list);
             }
         }
+        if (_pendingRemoveStripPassIndex >= 0)
+        {
+            var list = ShaderVariantCollectorSetting.GetStripPassNames(_currentPackageName);
+            if (_pendingRemoveStripPassIndex < list.Count)
+            {
+                list.RemoveAt(_pendingRemoveStripPassIndex);
+                ShaderVariantCollectorSetting.SetStripPassNames(_currentPackageName, list);
+            }
+        }
         if (_pendingAddStripAdditionalShader)
         {
             var list = ShaderVariantCollectorSetting.GetStripAdditionalShaderNames(_currentPackageName);
@@ -425,6 +440,20 @@ public class ShaderVariantCollectorWindow : EditorWindow
                     _newStripAdditionalKeyword = "";
                 }
                 else { Debug.LogWarning($"额外排除关键字已存在: {_newStripAdditionalKeyword}"); }
+            }
+        }
+        if (_pendingAddStripPass)
+        {
+            var list = ShaderVariantCollectorSetting.GetStripPassNames(_currentPackageName);
+            if (!string.IsNullOrEmpty(_newStripPassName))
+            {
+                if (!list.Contains(_newStripPassName))
+                {
+                    list.Add(_newStripPassName);
+                    ShaderVariantCollectorSetting.SetStripPassNames(_currentPackageName, list);
+                    _newStripPassName = "";
+                }
+                else { Debug.LogWarning($"额外裁剪 Pass 已存在: {_newStripPassName}"); }
             }
         }
     }
@@ -645,6 +674,9 @@ public class ShaderVariantCollectorWindow : EditorWindow
 
         // 可编辑：额外排除关键字
         DrawStripAdditionalKeywords();
+
+        // 可编辑：额外裁剪 Pass
+        DrawStripPassNames();
     }
 
     private void DrawReadOnlyList(string label, ref bool foldout, List<string> items)
@@ -742,6 +774,47 @@ public class ShaderVariantCollectorWindow : EditorWindow
             if (GUILayout.Button("添加", GUILayout.Width(60)))
             {
                 _pendingAddStripAdditionalKeyword = true;
+            }
+        }
+        finally
+        {
+            EditorGUILayout.EndHorizontal();
+        }
+        EditorGUI.indentLevel--;
+    }
+
+    private void DrawStripPassNames()
+    {
+        _showStripPassNames = EditorGUILayout.Foldout(_showStripPassNames, "额外裁剪 Pass（按 Pass 名称，如 DepthOnly）", true);
+        if (!_showStripPassNames) return;
+
+        EditorGUI.indentLevel++;
+        List<string> passNames = ShaderVariantCollectorSetting.GetStripPassNames(_currentPackageName);
+
+        for (int i = 0; i < passNames.Count; i++)
+        {
+            EditorGUILayout.BeginHorizontal();
+            try
+            {
+                EditorGUILayout.LabelField(passNames[i]);
+                if (GUILayout.Button("X", GUILayout.Width(25)))
+                {
+                    _pendingRemoveStripPassIndex = i;
+                }
+            }
+            finally
+            {
+                EditorGUILayout.EndHorizontal();
+            }
+        }
+
+        EditorGUILayout.BeginHorizontal();
+        try
+        {
+            _newStripPassName = EditorGUILayout.TextField("Pass 名称", _newStripPassName);
+            if (GUILayout.Button("添加", GUILayout.Width(60)))
+            {
+                _pendingAddStripPass = true;
             }
         }
         finally
